@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=720, height=1280, initial-scale=1.0">
+  <meta name="viewport" content="width=720, height=1280, initial-scale=1.0"/>
   <title>Claude</title>
   <link href="https://fonts.googleapis.com/css2?family=Styrene+A:wght@400;500&family=Tiempos+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
   <style>
@@ -23,24 +23,23 @@
     }
 
     html, body {
-  width: 720px;
-  height: 1280px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.5;
-  overflow: hidden;
-}
+      width: 720px;
+      height: 1280px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
 
     #app {
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      height: 100%;
       max-width: 100%;
     }
 
-    /* Header */
     #header {
       display: flex;
       align-items: center;
@@ -89,7 +88,6 @@
       50% { opacity: 0.3; }
     }
 
-    /* Messages */
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -151,7 +149,6 @@
       color: #2a2a2a;
     }
 
-    /* Thinking indicator */
     #thinking {
       display: none;
       padding: 6px 2px;
@@ -177,7 +174,6 @@
       50%       { opacity: 1;   transform: scale(1.1); }
     }
 
-    /* Empty state */
     #empty {
       flex: 1;
       display: flex;
@@ -200,7 +196,6 @@
       max-width: 160px;
     }
 
-    /* Footer */
     #footer {
       padding: 8px 14px 10px;
       border-top: 1px solid var(--border);
@@ -276,6 +271,17 @@
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
 
+  async function getLatestUuid() {
+    try {
+      const res = await fetch(`${RELAY}/latest`);
+      const data = await res.json();
+      if (data.avatar_uuid) {
+        avatarUuid = data.avatar_uuid;
+        statusDot.className = 'active';
+      }
+    } catch(e) {}
+  }
+
   async function poll() {
     try {
       const res = await fetch(`${RELAY}/poll?uuid=${avatarUuid || ''}`);
@@ -299,7 +305,7 @@
         statusDot.className = 'active';
       }
 
-    } catch(e) { /* silent fail */ }
+    } catch(e) {}
   }
 
   function addMessage(role, text) {
@@ -349,7 +355,7 @@
   }
 
   setInterval(poll, 1500);
-  poll();
+  getLatestUuid().then(() => poll());
 </script>
 </body>
 </html>

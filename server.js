@@ -107,6 +107,12 @@ app.post("/clear", (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/latest", (req, res) => {
+  const uuids = Object.keys(sessions);
+  if (uuids.length === 0) return res.json({});
+  res.json({ avatar_uuid: uuids[uuids.length - 1] });
+});
+
 app.get("/ping", (req, res) => {
   res.json({ ok: true });
 });
