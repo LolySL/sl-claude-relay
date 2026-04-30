@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Claude</title>
+  <link href="https://fonts.googleapis.com/css2?family=Styrene+A:wght@400;500&family=Tiempos+Text:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #1a1a1a;
+      --surface:   #212121;
+      --border:    #333333;
+      --text:      #ececec;
+      --text-dim:  #8a8a8a;
+      --accent:    #cc785c;
+      --user-bg:   #2a2a2a;
+      --claude-bg: transparent;
+      --radius:    12px;
+      --font-ui:   'Styrene A', 'SF Pro Display', system-ui, sans-serif;
+      --font-body: 'Tiempos Text', Georgia, serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 100%;
+    }
+
+    /* Header */
+    #header {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    #header svg {
+      width: 18px;
+      height: 18px;
+      opacity: 0.85;
+    }
+
+    #header-title {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      color: var(--text);
+      flex: 1;
+    }
+
+    #status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4a4a4a;
+      transition: background 0.4s;
+    }
+
+    #status-dot.active {
+      background: #5a9e6a;
+      box-shadow: 0 0 6px #5a9e6a88;
+    }
+
+    #status-dot.thinking {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Messages */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      scroll-behavior: smooth;
+    }
+
+    #messages::-webkit-scrollbar { width: 3px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .msg-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      animation: fadeUp 0.25s ease forwards;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-label {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 8px 0 3px 2px;
+    }
+
+    .msg-label.you { color: var(--text-dim); }
+    .msg-label.claude { color: var(--accent); opacity: 0.8; }
+
+    .msg-bubble {
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text);
+      max-width: 100%;
+      word-wrap: break-word;
+    }
+
+    .msg-bubble.user {
+      background: var(--user-bg);
+      border: 1px solid var(--border);
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-bubble.assistant {
+      background: var(--claude-bg);
+      border: none;
+      padding-left: 2px;
+      color: #d4d4d4;
+    }
+
+    /* Thinking indicator */
+    #thinking {
+      display: none;
+      padding: 6px 2px;
+      animation: fadeUp 0.2s ease forwards;
+    }
+
+    #thinking.visible { display: flex; align-items: center; gap: 5px; }
+
+    .think-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.4;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    .think-dot:nth-child(2) { animation-delay: 0.2s; }
+    .think-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 0.2; transform: scale(0.8); }
+      50%       { opacity: 1;   transform: scale(1.1); }
+    }
+
+    /* Empty state */
+    #empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      opacity: 0.35;
+      pointer-events: none;
+      padding-bottom: 40px;
+    }
+
+    #empty svg { width: 32px; height: 32px; }
+
+    #empty p {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+      line-height: 1.6;
+      max-width: 160px;
+    }
+
+    /* Footer */
+    #footer {
+      padding: 8px 14px 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    #footer-hint {
+      font-size: 10px;
+      color: var(--text-dim);
+      opacity: 0.6;
+    }
+
+    #clear-btn {
+      font-size: 10px;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color 0.2s, background 0.2s;
+      font-family: var(--font-ui);
+    }
+
+    #clear-btn:hover {
+      color: var(--text);
+      background: var(--border);
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <div id="header">
+    <!-- Anthropic-style mark -->
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13.827 3.988L19.66 18h-3.16l-1.17-3.016H8.68L7.51 18H4.35L10.183 3.988h3.644zm-1.822 3.95L9.77 12.6h4.47l-2.235-4.663z" fill="#cc785c"/>
+    </svg>
+    <span id="header-title">Claude</span>
+    <div id="status-dot"></div>
+  </div>
+
+  <div id="messages">
+    <div id="empty">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13.827 3.988L19.66 18h-3.16l-1.17-3.016H8.68L7.51 18H4.35L10.183 3.988h3.644zm-1.822 3.95L9.77 12.6h4.47l-2.235-4.663z" fill="currentColor"/>
+      </svg>
+      <p>Type in local chat<br>to talk to Claude</p>
+    </div>
+    <div id="thinking">
+      <div class="think-dot"></div>
+      <div class="think-dot"></div>
+      <div class="think-dot"></div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <span id="footer-hint">via Second Life</span>
+    <button id="clear-btn" onclick="clearChat()">clear</button>
+  </div>
+
+</div>
+
+<script>
+  const RELAY = window.location.origin;
+  let avatarUuid = null;
+  let pendingReply = null;
+
+  const messagesEl = document.getElementById('messages');
+  const emptyEl    = document.getElementById('empty');
+  const thinkingEl = document.getElementById('thinking');
+  const statusDot  = document.getElementById('status-dot');
+
+  // Poll for new messages from relay
+  async function poll() {
+    try {
+      const res = await fetch(`${RELAY}/poll?uuid=${avatarUuid || ''}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.avatar_uuid && !avatarUuid) {
+        avatarUuid = data.avatar_uuid;
+        statusDot.className = 'active';
+      }
+
+      if (data.user_message) {
+        hideThinking();
+        addMessage('user', data.user_message);
+        showThinking();
+      }
+
+      if (data.reply) {
+        hideThinking();
+        addMessage('assistant', data.reply);
+        statusDot.className = 'active';
+      }
+
+    } catch(e) { /* silent fail */ }
+  }
+
+  function addMessage(role, text) {
+    emptyEl.style.display = 'none';
+
+    const group = document.createElement('div');
+    group.className = 'msg-group';
+
+    const label = document.createElement('div');
+    label.className = `msg-label ${role === 'user' ? 'you' : 'claude'}`;
+    label.textContent = role === 'user' ? 'You' : 'Claude';
+
+    const bubble = document.createElement('div');
+    bubble.className = `msg-bubble ${role}`;
+    bubble.textContent = text;
+
+    group.appendChild(label);
+    group.appendChild(bubble);
+
+    // Insert before thinking indicator
+    messagesEl.insertBefore(group, thinkingEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showThinking() {
+    thinkingEl.classList.add('visible');
+    statusDot.className = 'thinking';
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function hideThinking() {
+    thinkingEl.classList.remove('visible');
+  }
+
+  async function clearChat() {
+    if (!avatarUuid) return;
+    await fetch(`${RELAY}/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avatar_uuid: avatarUuid })
+    });
+    messagesEl.innerHTML = '';
+    messagesEl.appendChild(emptyEl);
+    messagesEl.appendChild(thinkingEl);
+    emptyEl.style.display = '';
+    hideThinking();
+    statusDot.className = 'active';
+  }
+
+  // Poll every 1.5 seconds
+  setInterval(poll, 1500);
+  poll();
+</script>
+</body>
+</html>
