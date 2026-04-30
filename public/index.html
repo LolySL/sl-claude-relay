@@ -9,13 +9,13 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #1a1a1a;
-      --surface:   #212121;
-      --border:    #333333;
-      --text:      #ececec;
+      --bg:        #f7f5f2;
+      --surface:   #ffffff;
+      --border:    #e0ddd9;
+      --text:      #1a1a1a;
       --text-dim:  #8a8a8a;
       --accent:    #cc785c;
-      --user-bg:   #2a2a2a;
+      --user-bg:   #ffffff;
       --claude-bg: transparent;
       --radius:    12px;
       --font-ui:   'Styrene A', 'SF Pro Display', system-ui, sans-serif;
@@ -27,7 +27,7 @@
       background: var(--bg);
       color: var(--text);
       font-family: var(--font-ui);
-      font-size: 13px;
+      font-size: 15px;
       line-height: 1.5;
       overflow: hidden;
     }
@@ -47,6 +47,7 @@
       border-bottom: 1px solid var(--border);
       gap: 8px;
       flex-shrink: 0;
+      background: var(--surface);
     }
 
     #header svg {
@@ -56,7 +57,7 @@
     }
 
     #header-title {
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 500;
       letter-spacing: 0.01em;
       color: var(--text);
@@ -67,7 +68,7 @@
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #4a4a4a;
+      background: #c0bdb9;
       transition: background 0.4s;
     }
 
@@ -91,7 +92,7 @@
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: 12px 14px;
+      padding: 14px 16px;
       display: flex;
       flex-direction: column;
       gap: 2px;
@@ -115,7 +116,7 @@
     }
 
     .msg-label {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 500;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -123,15 +124,14 @@
       padding: 8px 0 3px 2px;
     }
 
-    .msg-label.you { color: var(--text-dim); }
-    .msg-label.claude { color: var(--accent); opacity: 0.8; }
+    .msg-label.claude { color: var(--accent); opacity: 0.9; }
 
     .msg-bubble {
-      padding: 8px 10px;
+      padding: 9px 12px;
       border-radius: var(--radius);
       font-family: var(--font-body);
-      font-size: 13px;
-      line-height: 1.55;
+      font-size: 15px;
+      line-height: 1.6;
       color: var(--text);
       max-width: 100%;
       word-wrap: break-word;
@@ -147,7 +147,7 @@
       background: var(--claude-bg);
       border: none;
       padding-left: 2px;
-      color: #d4d4d4;
+      color: #2a2a2a;
     }
 
     /* Thinking indicator */
@@ -192,7 +192,7 @@
     #empty svg { width: 32px; height: 32px; }
 
     #empty p {
-      font-size: 11px;
+      font-size: 13px;
       color: var(--text-dim);
       text-align: center;
       line-height: 1.6;
@@ -207,16 +207,17 @@
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
+      background: var(--surface);
     }
 
     #footer-hint {
-      font-size: 10px;
+      font-size: 11px;
       color: var(--text-dim);
       opacity: 0.6;
     }
 
     #clear-btn {
-      font-size: 10px;
+      font-size: 11px;
       color: var(--text-dim);
       background: none;
       border: none;
@@ -237,7 +238,6 @@
 <div id="app">
 
   <div id="header">
-    <!-- Anthropic-style mark -->
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M13.827 3.988L19.66 18h-3.16l-1.17-3.016H8.68L7.51 18H4.35L10.183 3.988h3.644zm-1.822 3.95L9.77 12.6h4.47l-2.235-4.663z" fill="#cc785c"/>
     </svg>
@@ -269,14 +269,12 @@
 <script>
   const RELAY = window.location.origin;
   let avatarUuid = null;
-  let pendingReply = null;
 
   const messagesEl = document.getElementById('messages');
   const emptyEl    = document.getElementById('empty');
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
 
-  // Poll for new messages from relay
   async function poll() {
     try {
       const res = await fetch(`${RELAY}/poll?uuid=${avatarUuid || ''}`);
@@ -320,7 +318,6 @@
     group.appendChild(label);
     group.appendChild(bubble);
 
-    // Insert before thinking indicator
     messagesEl.insertBefore(group, thinkingEl);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -350,7 +347,6 @@
     statusDot.className = 'active';
   }
 
-  // Poll every 1.5 seconds
   setInterval(poll, 1500);
   poll();
 </script>
