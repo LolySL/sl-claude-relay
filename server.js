@@ -92,9 +92,9 @@ app.post("/chat", async (req, res) => {
 });
 
 app.post("/sethandoff", async (req, res) => {
-  const { avatar_uuid, project, api_key } = req.body;
+  const { avatar_uuid, project } = req.body;
 
-  if (!avatar_uuid || !project || !api_key) {
+if (!avatar_uuid || !project) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
