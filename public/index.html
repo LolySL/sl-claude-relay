@@ -357,6 +357,7 @@
   }
 
   setInterval(poll, 1500);
+  setInterval(() => fetch(`${RELAY}/ping`), 600000);
   getLatestUuid().then(() => poll());
 </script>
 </body>

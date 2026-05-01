@@ -37,7 +37,7 @@ app.post("/chat", async (req, res) => {
 
   sessions[avatar_uuid].push({ role: "user", content: message });
 
-  if (sessions[avatar_uuid].length > 20) {
+  if (sessions[avatar_uuid].length > 50) {
     sessions[avatar_uuid] = sessions[avatar_uuid].slice(-20);
   }
 
