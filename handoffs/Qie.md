@@ -1,6 +1,14 @@
+### Button behavior
+- Short press face 0: toggles chat mode on/off
+- Long press face 0 (3 seconds): opens settings dialog
+- Settings dialog options: toggle history, clear session, re-read notecard
+
 ---
 
 ## Webpage (index.html)
+
+### Location
+C:\Users\adi\sl-claude-relay\public\index.html
 
 - Bright theme (#f7f5f2 background)
 - Font size 40px, line-height 1.5
@@ -14,7 +22,7 @@
 
 ## Cielomar Resort project
 
-Qie is a collaborator on this project. Full details in Cielomar handoff (#Cielomar).
+Qie is a collaborator on this project. Full details available via #Cielomar handoff.
 Key role: backup scripter, complex LSL issues, environment scripts, building the fixed environment wall panel.
 
 ---
