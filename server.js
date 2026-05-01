@@ -15,7 +15,8 @@ const systemPrompts = {};
 const HANDOFF_URLS = {
   HUD: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/HUD.md",
   Cielomar: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Cielomar.md",
-  Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md"
+  Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md",
+  Qie: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Qie.md"
 };
 
 app.post("/chat", async (req, res) => {
