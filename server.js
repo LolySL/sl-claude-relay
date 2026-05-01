@@ -10,6 +10,13 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const sessions = {};
 const pending = {};
+const systemPrompts = {};
+
+const HANDOFF_URLS = {
+  HUD: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/HUD.md",
+  Cielomar: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Cielomar.md",
+  Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md"
+};
 
 app.post("/chat", async (req, res) => {
   const { avatar_uuid, avatar_name, message, api_key } = req.body;
@@ -34,13 +41,17 @@ app.post("/chat", async (req, res) => {
     sessions[avatar_uuid] = sessions[avatar_uuid].slice(-20);
   }
 
+  const systemPrompt = systemPrompts[avatar_uuid]
+    ? systemPrompts[avatar_uuid]
+    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen.`;
+
   try {
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
       {
         model: "claude-sonnet-4-6",
         max_tokens: 300,
-        system: `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen.`,
+        system: systemPrompt,
         messages: sessions[avatar_uuid]
       },
       {
@@ -80,6 +91,41 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+app.post("/sethandoff", async (req, res) => {
+  const { avatar_uuid, project, api_key } = req.body;
+
+  if (!avatar_uuid || !project || !api_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const url = HANDOFF_URLS[project];
+  if (!url) {
+    return res.status(400).json({ error: "Unknown project: " + project });
+  }
+
+  try {
+    const response = await axios.get(url);
+    const content = response.data;
+
+    systemPrompts[avatar_uuid] = content;
+    sessions[avatar_uuid] = [];
+    delete pending[avatar_uuid];
+
+    const confirmMsg = "Context loaded. Claude is ready.";
+    pending[avatar_uuid] = {
+      avatar_uuid,
+      user_message: "handoff",
+      reply: confirmMsg
+    };
+
+    res.json({ ok: true });
+
+  } catch (err) {
+    console.error("Handoff fetch error:", err.message);
+    res.status(500).json({ error: "Failed to fetch handoff file" });
+  }
+});
+
 app.get("/poll", (req, res) => {
   const uuid = req.query.uuid;
 
@@ -103,6 +149,7 @@ app.post("/clear", (req, res) => {
   if (avatar_uuid) {
     delete sessions[avatar_uuid];
     delete pending[avatar_uuid];
+    delete systemPrompts[avatar_uuid];
   }
   res.json({ ok: true });
 });
