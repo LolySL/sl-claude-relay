@@ -11,6 +11,7 @@ app.use(express.static(path.join(__dirname, "public")));
 const sessions = {};
 const pending = {};
 const systemPrompts = {};
+const pendingHandoffs = {};
 
 const HANDOFF_URLS = {
   HUD: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/HUD.md",
@@ -64,7 +65,14 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const reply = response.data.content[0].text;
+    let reply = response.data.content[0].text;
+
+    // Detect and extract [HANDOFF]...[/HANDOFF] block
+    const handoffMatch = reply.match(/\[HANDOFF\]([\s\S]*?)\[\/HANDOFF\]/);
+    if (handoffMatch) {
+      pendingHandoffs[avatar_uuid] = handoffMatch[1].trim();
+      reply = "Working... ready.";
+    }
 
     sessions[avatar_uuid].push({ role: "assistant", content: reply });
 
@@ -95,7 +103,7 @@ app.post("/chat", async (req, res) => {
 app.post("/sethandoff", async (req, res) => {
   const { avatar_uuid, project } = req.body;
 
-if (!avatar_uuid || !project) {
+  if (!avatar_uuid || !project) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -127,6 +135,22 @@ if (!avatar_uuid || !project) {
   }
 });
 
+app.get("/gethandoff", (req, res) => {
+  const uuid = req.query.uuid;
+
+  if (!uuid) {
+    return res.json({});
+  }
+
+  if (pendingHandoffs[uuid]) {
+    const content = pendingHandoffs[uuid];
+    delete pendingHandoffs[uuid];
+    return res.json({ content });
+  }
+
+  res.json({});
+});
+
 app.get("/poll", (req, res) => {
   const uuid = req.query.uuid;
 
@@ -151,6 +175,7 @@ app.post("/clear", (req, res) => {
     delete sessions[avatar_uuid];
     delete pending[avatar_uuid];
     delete systemPrompts[avatar_uuid];
+    delete pendingHandoffs[avatar_uuid];
   }
   res.json({ ok: true });
 });
