@@ -128,7 +128,7 @@ app.post("/gemini-chat", async (req, res) => {
   }
 
   const systemInstruction = system_prompt
-    ? decodeURIComponent(system_prompt)
+    ? system_prompt
     : systemPrompts[avatar_uuid]
     ? systemPrompts[avatar_uuid]
     : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words.`;
