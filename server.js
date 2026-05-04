@@ -10,6 +10,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const sessions = {};
 const geminiSessions = {};
+const groqSessions = {};
 const pending = {};
 const systemPrompts = {};
 const pendingHandoffs = {};
@@ -181,6 +182,82 @@ app.post("/gemini-chat", async (req, res) => {
   }
 });
 
+app.post("/groq-chat", async (req, res) => {
+  const { avatar_uuid, avatar_name, message, groq_key, system_prompt } = req.body;
+
+  if (!avatar_uuid || !message || !groq_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  if (!groqSessions[avatar_uuid]) {
+    groqSessions[avatar_uuid] = [];
+  }
+
+  pending[avatar_uuid] = {
+    avatar_uuid,
+    user_message: message,
+    reply: null
+  };
+
+  groqSessions[avatar_uuid].push({ role: "user", content: message });
+
+  if (groqSessions[avatar_uuid].length > 50) {
+    groqSessions[avatar_uuid] = groqSessions[avatar_uuid].slice(-20);
+  }
+
+  const systemInstruction = system_prompt
+    ? system_prompt
+    : systemPrompts[avatar_uuid]
+    ? systemPrompts[avatar_uuid]
+    : `You are a helpful AI assistant in Second Life. The user's avatar name is ${avatar_name}. Keep responses under 100 words.`;
+
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        max_tokens: 200,
+        messages: [
+          { role: "system", content: systemInstruction },
+          ...groqSessions[avatar_uuid]
+        ]
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${groq_key}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || "I have nothing to say. Which is unlike me.";
+
+    groqSessions[avatar_uuid].push({ role: "assistant", content: reply });
+
+    if (pending[avatar_uuid]) {
+      pending[avatar_uuid].reply = reply;
+    }
+
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 401) userMsg = "Invalid Groq API key. Please re-enter it via the settings menu.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    if (pending[avatar_uuid]) {
+      pending[avatar_uuid].reply = userMsg;
+    }
+
+    console.error("Groq API error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
 app.post("/sethandoff", async (req, res) => {
   const { avatar_uuid, project } = req.body;
 
@@ -255,6 +332,7 @@ app.post("/clear", (req, res) => {
   if (avatar_uuid) {
     delete sessions[avatar_uuid];
     delete geminiSessions[avatar_uuid];
+    delete groqSessions[avatar_uuid];
     delete pending[avatar_uuid];
     delete systemPrompts[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
