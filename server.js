@@ -9,6 +9,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 const sessions = {};
+const geminiSessions = {};
 const pending = {};
 const systemPrompts = {};
 const pendingHandoffs = {};
@@ -68,7 +69,6 @@ app.post("/chat", async (req, res) => {
 
     let reply = response.data.content[0].text;
 
-    // Detect and extract [HANDOFF]...[/HANDOFF] block
     const handoffMatch = reply.match(/\[HANDOFF\]([\s\S]*?)\[\/HANDOFF\]/);
     if (handoffMatch) {
       pendingHandoffs[avatar_uuid] = handoffMatch[1].trim();
@@ -89,7 +89,7 @@ app.post("/chat", async (req, res) => {
     const errMsg = err.response?.data?.error?.message || "Unknown error";
 
     let userMsg = "Something went wrong. Please try again.";
-    if (status === 401) userMsg = "Invalid API key. Please check your Claude_Settings notecard.";
+    if (status === 401) userMsg = "Invalid API key. Please check your settings.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
     if (pending[avatar_uuid]) {
@@ -97,6 +97,84 @@ app.post("/chat", async (req, res) => {
     }
 
     console.error("API error:", errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+app.post("/gemini-chat", async (req, res) => {
+  const { avatar_uuid, avatar_name, message, gemini_key } = req.body;
+
+  if (!avatar_uuid || !message || !gemini_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  if (!geminiSessions[avatar_uuid]) {
+    geminiSessions[avatar_uuid] = [];
+  }
+
+  pending[avatar_uuid] = {
+    avatar_uuid,
+    user_message: message,
+    reply: null
+  };
+
+  geminiSessions[avatar_uuid].push({
+    role: "user",
+    parts: [{ text: message }]
+  });
+
+  if (geminiSessions[avatar_uuid].length > 50) {
+    geminiSessions[avatar_uuid] = geminiSessions[avatar_uuid].slice(-20);
+  }
+
+  const systemInstruction = systemPrompts[avatar_uuid]
+    ? systemPrompts[avatar_uuid]
+    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words.`;
+
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemini_key}`,
+      {
+        system_instruction: {
+          parts: [{ text: systemInstruction }]
+        },
+        contents: geminiSessions[avatar_uuid]
+      },
+      {
+        headers: {
+          "content-type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't think of anything to say. Which is unusual.";
+
+    geminiSessions[avatar_uuid].push({
+      role: "model",
+      parts: [{ text: reply }]
+    });
+
+    if (pending[avatar_uuid]) {
+      pending[avatar_uuid].reply = reply;
+    }
+
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 400) userMsg = "Bad request. Check your Gemini API key format.";
+    if (status === 401 || status === 403) userMsg = "Invalid Gemini API key. Please re-enter it via the settings menu.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    if (pending[avatar_uuid]) {
+      pending[avatar_uuid].reply = userMsg;
+    }
+
+    console.error("Gemini API error:", status, errMsg);
     res.json({ reply: userMsg });
   }
 });
@@ -174,6 +252,7 @@ app.post("/clear", (req, res) => {
   const { avatar_uuid } = req.body;
   if (avatar_uuid) {
     delete sessions[avatar_uuid];
+    delete geminiSessions[avatar_uuid];
     delete pending[avatar_uuid];
     delete systemPrompts[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
