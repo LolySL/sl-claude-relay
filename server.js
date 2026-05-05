@@ -55,7 +55,7 @@ app.post("/chat", async (req, res) => {
       "https://api.anthropic.com/v1/messages",
       {
         model: "claude-sonnet-4-6",
-        max_tokens: 300,
+        max_tokens: 1000,
         system: systemPrompt,
         messages: sessions[avatar_uuid]
       },
