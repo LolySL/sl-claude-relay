@@ -46,7 +46,9 @@ app.post("/chat", async (req, res) => {
     sessions[avatar_uuid] = sessions[avatar_uuid].slice(-20);
   }
 
-  const systemPrompt = systemPrompts[avatar_uuid]
+  const systemPrompt = req.body.system_prompt
+    ? req.body.system_prompt
+    : systemPrompts[avatar_uuid]
     ? systemPrompts[avatar_uuid]
     : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen.`;
 
