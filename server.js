@@ -20,7 +20,9 @@ const HANDOFF_URLS = {
   Cielomar: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Cielomar.md",
   Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md",
   Qie: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Qie.md",
-  REALai: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/REALai.md"
+  REALai: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/REALai_core.md",
+  Inventory: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Inventory.md",
+  Roles: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Roles.md"
 };
 
 app.post("/chat", async (req, res) => {
