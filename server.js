@@ -2,12 +2,17 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const path = require("path");
+const fs = require("fs");
+
+// --- PRIVATE ENDPOINT OWNER ---
+const OWNER_UUID = "de2acd52-0c3c-4a84-af23-b5f865245c12";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// --- STANDARD LINE SESSION STORAGE ---
 const sessions = {};
 const geminiSessions = {};
 const groqSessions = {};
@@ -15,15 +20,41 @@ const pending = {};
 const systemPrompts = {};
 const pendingHandoffs = {};
 
+// --- ENGINE LIGHT LINE: object tracking per owner ---
+// Structure: engineRegistry[avatar_uuid] = { object_uuid: lastSeenTimestamp }
+const engineRegistry = {};
+const ENGINE_MAX_SCRIPTS  = 3;
+const ENGINE_TIMEOUT_MS   = 2 * 60 * 60 * 1000; // 2 hours
+
 const HANDOFF_URLS = {
   HUD: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/HUD.md",
   Cielomar: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Cielomar.md",
   Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md",
-  Qie: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Qie.md",
-  REALai: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/REALai_core.md",
   Inventory: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Inventory.md",
   Roles: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Roles.md"
 };
+
+// ============================================================
+// HELPER — clean expired Engine registrations for one owner
+// ============================================================
+
+function cleanExpiredEngines(avatar_uuid) {
+  if (!engineRegistry[avatar_uuid]) return;
+  const now = Date.now();
+  const reg = engineRegistry[avatar_uuid];
+  Object.keys(reg).forEach(obj_uuid => {
+    if (now - reg[obj_uuid] > ENGINE_TIMEOUT_MS) {
+      delete reg[obj_uuid];
+    }
+  });
+  if (Object.keys(reg).length === 0) {
+    delete engineRegistry[avatar_uuid];
+  }
+}
+
+// ============================================================
+// STANDARD LINE — Claude /chat
+// ============================================================
 
 app.post("/chat", async (req, res) => {
   const { avatar_uuid, avatar_name, message, api_key } = req.body;
@@ -106,6 +137,10 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+// ============================================================
+// STANDARD LINE — Gemini /gemini-chat
+// ============================================================
+
 app.post("/gemini-chat", async (req, res) => {
   const { avatar_uuid, avatar_name, message, gemini_key, system_prompt } = req.body;
 
@@ -186,6 +221,10 @@ app.post("/gemini-chat", async (req, res) => {
   }
 });
 
+// ============================================================
+// STANDARD LINE — Groq /groq-chat
+// ============================================================
+
 app.post("/groq-chat", async (req, res) => {
   const { avatar_uuid, avatar_name, message, groq_key, system_prompt } = req.body;
 
@@ -262,6 +301,156 @@ app.post("/groq-chat", async (req, res) => {
   }
 });
 
+// ============================================================
+// LIGHT LINE — Marvin / Flowers — /groq-chat-light
+// Stateless. No session storage. Object UUID only.
+// ============================================================
+
+app.post("/groq-chat-light", async (req, res) => {
+  const { object_uuid, message, groq_key, system_prompt } = req.body;
+
+  if (!object_uuid || !message || !groq_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const systemInstruction = system_prompt
+    ? system_prompt
+    : "You are a helpful AI assistant in Second Life. Keep responses under 100 words.";
+
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        max_tokens: 300,
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: message }
+        ]
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${groq_key}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || "I have nothing to say. Which is unlike me.";
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 401) userMsg = "Invalid Groq API key. Please check your API key notecard.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    console.error("Groq Light API error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+// ============================================================
+// LIGHT LINE — The Engine — /groq-chat-engine
+// Stateless. Tracks active object UUIDs per owner (max 3).
+// Ping refreshes registration timestamp.
+// ============================================================
+
+app.post("/groq-chat-engine", async (req, res) => {
+  const { avatar_uuid, object_uuid, message, groq_key, system_prompt } = req.body;
+
+  if (!avatar_uuid || !object_uuid || !message || !groq_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Clean expired registrations for this owner
+  cleanExpiredEngines(avatar_uuid);
+
+  if (!engineRegistry[avatar_uuid]) {
+    engineRegistry[avatar_uuid] = {};
+  }
+
+  const reg = engineRegistry[avatar_uuid];
+  const alreadyRegistered = reg.hasOwnProperty(object_uuid);
+  const activeCount = Object.keys(reg).length;
+
+  // If not registered and already at limit — deny
+  if (!alreadyRegistered && activeCount >= ENGINE_MAX_SCRIPTS) {
+    return res.json({
+      reply: "You already have 3 Engine scripts running. Please deactivate one before activating another. This keeps all your characters responsive and stable."
+    });
+  }
+
+  // Register or refresh timestamp
+  reg[object_uuid] = Date.now();
+
+  const systemInstruction = system_prompt
+    ? system_prompt
+    : "You are a helpful AI assistant in Second Life. Keep responses under 100 words.";
+
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        max_tokens: 300,
+        messages: [
+          { role: "system", content: systemInstruction },
+          { role: "user", content: message }
+        ]
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${groq_key}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.choices?.[0]?.message?.content || "I have nothing to say. Which is unlike me.";
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 401) userMsg = "Invalid Groq API key. Please check your API key notecard.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    console.error("Groq Engine API error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+// ============================================================
+// ENGINE PING — refreshes object registration timestamp
+// ============================================================
+
+app.post("/engine-ping", (req, res) => {
+  const { avatar_uuid, object_uuid } = req.body;
+
+  if (!avatar_uuid || !object_uuid) {
+    return res.json({ ok: false });
+  }
+
+  cleanExpiredEngines(avatar_uuid);
+
+  if (engineRegistry[avatar_uuid] && engineRegistry[avatar_uuid].hasOwnProperty(object_uuid)) {
+    engineRegistry[avatar_uuid][object_uuid] = Date.now();
+  }
+
+  res.json({ ok: true });
+});
+
+// ============================================================
+// HANDOFF
+// ============================================================
+
 app.post("/sethandoff", async (req, res) => {
   const { avatar_uuid, project } = req.body;
 
@@ -313,6 +502,10 @@ app.get("/gethandoff", (req, res) => {
   res.json({});
 });
 
+// ============================================================
+// POLL
+// ============================================================
+
 app.get("/poll", (req, res) => {
   const uuid = req.query.uuid;
 
@@ -331,23 +524,81 @@ app.get("/poll", (req, res) => {
   res.json({});
 });
 
+// ============================================================
+// CLEAR — fixed to actually clear all sessions when "all"
+// ============================================================
+
 app.post("/clear", (req, res) => {
   const { avatar_uuid } = req.body;
-  if (avatar_uuid) {
+
+  if (!avatar_uuid) {
+    return res.json({ ok: false });
+  }
+
+  if (avatar_uuid === "all") {
+    // Clear everything
+    Object.keys(sessions).forEach(k => delete sessions[k]);
+    Object.keys(geminiSessions).forEach(k => delete geminiSessions[k]);
+    Object.keys(groqSessions).forEach(k => delete groqSessions[k]);
+    Object.keys(pending).forEach(k => delete pending[k]);
+    Object.keys(systemPrompts).forEach(k => delete systemPrompts[k]);
+    Object.keys(pendingHandoffs).forEach(k => delete pendingHandoffs[k]);
+    Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
+  } else {
     delete sessions[avatar_uuid];
     delete geminiSessions[avatar_uuid];
     delete groqSessions[avatar_uuid];
     delete pending[avatar_uuid];
     delete systemPrompts[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
+    delete engineRegistry[avatar_uuid];
   }
+
   res.json({ ok: true });
 });
+
+// ============================================================
+// MISC
+// ============================================================
 
 app.get("/latest", (req, res) => {
   const uuids = Object.keys(sessions);
   if (uuids.length === 0) return res.json({});
   res.json({ avatar_uuid: uuids[uuids.length - 1] });
+});
+
+// ============================================================
+// PRIVATE HANDOFF — Loly's personal files
+// Serves .md files from handoffs/ folder directly from relay
+// Protected by owner UUID — rejects all other requests
+// Not affected by /clear or any other general endpoint
+// ============================================================
+
+app.post("/handoff-private", (req, res) => {
+  const { avatar_uuid, file } = req.body;
+
+  if (!avatar_uuid || avatar_uuid !== OWNER_UUID) {
+    return res.status(403).json({ error: "Unauthorized." });
+  }
+
+  if (!file || typeof file !== "string") {
+    return res.status(400).json({ error: "Missing file name." });
+  }
+
+  // Sanitize — only allow simple filenames, no path traversal
+  const safeName = path.basename(file);
+  if (!safeName.endsWith(".md")) {
+    return res.status(400).json({ error: "Only .md files allowed." });
+  }
+
+  const filePath = path.join(__dirname, "handoffs", safeName);
+
+  fs.readFile(filePath, "utf8", (err, data) => {
+    if (err) {
+      return res.status(404).json({ error: "File not found: " + safeName });
+    }
+    res.json({ content: data });
+  });
 });
 
 app.get("/ping", (req, res) => {
