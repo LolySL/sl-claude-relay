@@ -4,8 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Claude</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
-  <style>
+    <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -23,13 +22,14 @@
     }
 
     html, body {
-  width: 90vh;
-  height: 90vw;
+  width: 100vh;
+  height: 100vw;
   transform: rotate(-90deg);
-  transform-origin: center center;
+  transform-origin: 50vw 50vw;
   background: var(--bg);
   color: var(--text);
-  font-family:'Inter', sans-serif;
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+font-weight: 500;
   font-size: 40px;
   line-height: 1.5;
   overflow: hidden;
@@ -130,7 +130,8 @@
     .msg-bubble {
       padding: 9px 12px;
       border-radius: var(--radius);
-      font-family: var(--font-body);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+font-weight: 500;
       font-size: 40px;
       line-height: 1.6;
       color: var(--text);
