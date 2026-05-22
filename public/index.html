@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Claude</title>
-    <style>
+  <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -16,59 +16,55 @@
       --accent:    #cc785c;
       --user-bg:   #ffffff;
       --claude-bg: transparent;
-      --radius:    12px;
-      --font-ui:   'Styrene A', 'SF Pro Display', system-ui, sans-serif;
-      --font-body: 'Tiempos Text', Georgia, serif;
+      --radius:    16px;
     }
 
     html, body {
-  width: 100vh;
-  height: 100vw;
-  transform: rotate(-90deg);
-  transform-origin: 50vw 50vw;
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
-font-weight: 500;
-  font-size: 40px;
-  line-height: 1.5;
-  overflow: hidden;
-}
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      font-weight: 500;
+      font-size: 60px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
 
     #app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-width: 100%;
-  }
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-width: 100%;
+    }
 
     #header {
       display: flex;
       align-items: center;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      gap: 8px;
+      padding: 20px 28px;
+      border-bottom: 2px solid var(--border);
+      gap: 16px;
       flex-shrink: 0;
       background: var(--surface);
     }
 
     #header svg {
-      width: 18px;
-      height: 18px;
+      width: 48px;
+      height: 48px;
       opacity: 0.85;
     }
 
     #header-title {
-      font-size: 15px;
-      font-weight: 500;
+      font-size: 52px;
+      font-weight: 600;
       letter-spacing: 0.01em;
       color: var(--text);
       flex: 1;
     }
 
     #status-dot {
-      width: 6px;
-      height: 6px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: #c0bdb9;
       transition: background 0.4s;
@@ -76,12 +72,12 @@ font-weight: 500;
 
     #status-dot.active {
       background: #5a9e6a;
-      box-shadow: 0 0 6px #5a9e6a88;
+      box-shadow: 0 0 12px #5a9e6a88;
     }
 
     #status-dot.thinking {
       background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
+      box-shadow: 0 0 12px var(--accent);
       animation: pulse 1.2s ease-in-out infinite;
     }
 
@@ -93,21 +89,21 @@ font-weight: 500;
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: 14px 16px;
+      padding: 24px 28px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 4px;
       scroll-behavior: smooth;
     }
 
-    #messages::-webkit-scrollbar { width: 3px; }
+    #messages::-webkit-scrollbar { width: 6px; }
     #messages::-webkit-scrollbar-track { background: transparent; }
-    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
     .msg-group {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 4px;
       animation: fadeUp 0.25s ease forwards;
     }
 
@@ -117,22 +113,22 @@ font-weight: 500;
     }
 
     .msg-label {
-      font-size: 11px;
-      font-weight: 500;
+      font-size: 36px;
+      font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--text-dim);
-      padding: 8px 0 3px 2px;
+      padding: 16px 0 6px 4px;
     }
 
     .msg-label.claude { color: var(--accent); opacity: 0.9; }
 
     .msg-bubble {
-      padding: 9px 12px;
+      padding: 18px 24px;
       border-radius: var(--radius);
       font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
-font-weight: 500;
-      font-size: 40px;
+      font-weight: 500;
+      font-size: 60px;
       line-height: 1.6;
       color: var(--text);
       max-width: 100%;
@@ -141,28 +137,28 @@ font-weight: 500;
 
     .msg-bubble.user {
       background: var(--user-bg);
-      border: 1px solid var(--border);
+      border: 2px solid var(--border);
       border-bottom-right-radius: 4px;
     }
 
     .msg-bubble.assistant {
       background: var(--claude-bg);
       border: none;
-      padding-left: 2px;
+      padding-left: 4px;
       color: #2a2a2a;
     }
 
     #thinking {
       display: none;
-      padding: 6px 2px;
+      padding: 12px 4px;
       animation: fadeUp 0.2s ease forwards;
     }
 
-    #thinking.visible { display: flex; align-items: center; gap: 5px; }
+    #thinking.visible { display: flex; align-items: center; gap: 10px; }
 
     .think-dot {
-      width: 5px;
-      height: 5px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: var(--accent);
       opacity: 0.4;
@@ -183,25 +179,25 @@ font-weight: 500;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 20px;
       opacity: 0.35;
       pointer-events: none;
-      padding-bottom: 40px;
+      padding-bottom: 60px;
     }
 
-    #empty svg { width: 32px; height: 32px; }
+    #empty svg { width: 80px; height: 80px; }
 
     #empty p {
-      font-size: 13px;
+      font-size: 44px;
       color: var(--text-dim);
       text-align: center;
       line-height: 1.6;
-      max-width: 160px;
+      max-width: 400px;
     }
 
     #footer {
-      padding: 8px 14px 10px;
-      border-top: 1px solid var(--border);
+      padding: 18px 28px 22px;
+      border-top: 2px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -210,21 +206,21 @@ font-weight: 500;
     }
 
     #footer-hint {
-      font-size: 11px;
+      font-size: 36px;
       color: var(--text-dim);
       opacity: 0.6;
     }
 
     #clear-btn {
-      font-size: 11px;
+      font-size: 36px;
       color: var(--text-dim);
       background: none;
       border: none;
       cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
+      padding: 6px 16px;
+      border-radius: 8px;
       transition: color 0.2s, background 0.2s;
-      font-family: var(--font-ui);
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
     }
 
     #clear-btn:hover {
