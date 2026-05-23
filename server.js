@@ -83,7 +83,7 @@ app.post("/chat", async (req, res) => {
     ? req.body.system_prompt
     : systemPrompts[avatar_uuid]
     ? systemPrompts[avatar_uuid]
-    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen.`;
+    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen. Time in the context feed is SL time, which is US Pacific time (UTC-7 in summer, UTC-8 in winter).`
 
   try {
     const response = await axios.post(
@@ -468,7 +468,6 @@ app.post("/sethandoff", async (req, res) => {
     const content = response.data;
 
     systemPrompts[avatar_uuid] = content;
-    sessions[avatar_uuid] = [];
     delete pending[avatar_uuid];
 
     const confirmMsg = "Context loaded. Claude is ready.";

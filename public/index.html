@@ -264,6 +264,7 @@
 <script>
   const RELAY = window.location.origin;
   let avatarUuid = null;
+  let userMessageShown = false;
 
   const messagesEl = document.getElementById('messages');
   const emptyEl    = document.getElementById('empty');
@@ -292,22 +293,32 @@
         statusDot.className = 'active';
       }
 
-      if (data.user_message) {
+      let slTime = '';
+
+      if (data.user_message && !userMessageShown) {
+        userMessageShown = true;
         hideThinking();
-        addMessage('user', data.user_message);
+
+        // Extract SL time from context before stripping it
+        let timeMatch = data.user_message.match(/SL (\d+:\d+)/);
+        slTime = timeMatch ? timeMatch[1] + ' SL' : '';
+
+        let userMsg = data.user_message.replace(/\[Context:.*?\]\s*/, '');
+        addMessage('user', userMsg, slTime);
         showThinking();
       }
 
       if (data.reply) {
+        userMessageShown = false;
         hideThinking();
-        addMessage('assistant', data.reply);
+        addMessage('assistant', data.reply, slTime);
         statusDot.className = 'active';
       }
 
     } catch(e) {}
   }
 
-  function addMessage(role, text) {
+  function addMessage(role, text, time = '') {
     emptyEl.style.display = 'none';
 
     const group = document.createElement('div');
@@ -315,7 +326,7 @@
 
     const label = document.createElement('div');
     label.className = `msg-label ${role === 'user' ? 'you' : 'claude'}`;
-    label.textContent = role === 'user' ? 'You' : 'Claude';
+    label.textContent = (role === 'user' ? 'You' : 'Claude') + (time ? '  ' + time : '');
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${role}`;
