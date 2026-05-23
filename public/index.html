@@ -16,17 +16,17 @@
       --accent:    #cc785c;
       --user-bg:   #ffffff;
       --claude-bg: transparent;
-      --radius:    16px;
+      --radius:    12px;
     }
 
     html, body {
       width: 100%;
-      height: 95%;
+      height: 100%;
       background: var(--bg);
       color: var(--text);
       font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
       font-weight: 500;
-      font-size: 34px;
+      font-size: 14px;
       line-height: 1.5;
       overflow: hidden;
     }
@@ -34,38 +34,37 @@
     #app {
       display: flex;
       flex-direction: column;
-      height: 99%;
+      height: 100%;
       max-width: 100%;
-      margin: 0 auto;
     }
 
     #header {
       display: flex;
       align-items: center;
-      padding: 20px 28px;
-      border-bottom: 2px solid var(--border);
-      gap: 16px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
       flex-shrink: 0;
       background: var(--surface);
     }
 
     #header svg {
-      width: 48px;
-      height: 48px;
+      width: 18px;
+      height: 18px;
       opacity: 0.85;
     }
 
     #header-title {
-      font-size: 52px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 500;
       letter-spacing: 0.01em;
       color: var(--text);
       flex: 1;
     }
 
     #status-dot {
-      width: 18px;
-      height: 18px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: #c0bdb9;
       transition: background 0.4s;
@@ -73,12 +72,12 @@
 
     #status-dot.active {
       background: #5a9e6a;
-      box-shadow: 0 0 12px #5a9e6a88;
+      box-shadow: 0 0 6px #5a9e6a88;
     }
 
     #status-dot.thinking {
       background: var(--accent);
-      box-shadow: 0 0 12px var(--accent);
+      box-shadow: 0 0 6px var(--accent);
       animation: pulse 1.2s ease-in-out infinite;
     }
 
@@ -90,21 +89,21 @@
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: 24px 28px;
+      padding: 14px 16px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       scroll-behavior: smooth;
     }
 
-    #messages::-webkit-scrollbar { width: 6px; }
+    #messages::-webkit-scrollbar { width: 3px; }
     #messages::-webkit-scrollbar-track { background: transparent; }
-    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
     .msg-group {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       animation: fadeUp 0.25s ease forwards;
     }
 
@@ -114,22 +113,22 @@
     }
 
     .msg-label {
-      font-size: 36px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 500;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--text-dim);
-      padding: 16px 0 6px 4px;
+      padding: 8px 0 3px 2px;
     }
 
     .msg-label.claude { color: var(--accent); opacity: 0.9; }
 
     .msg-bubble {
-      padding: 18px 24px;
+      padding: 9px 12px;
       border-radius: var(--radius);
       font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
       font-weight: 500;
-      font-size: 34px;
+      font-size: 13px;
       line-height: 1.6;
       color: var(--text);
       max-width: 100%;
@@ -138,28 +137,28 @@
 
     .msg-bubble.user {
       background: var(--user-bg);
-      border: 2px solid var(--border);
+      border: 1px solid var(--border);
       border-bottom-right-radius: 4px;
     }
 
     .msg-bubble.assistant {
       background: var(--claude-bg);
       border: none;
-      padding-left: 4px;
+      padding-left: 2px;
       color: #2a2a2a;
     }
 
     #thinking {
       display: none;
-      padding: 12px 4px;
+      padding: 6px 2px;
       animation: fadeUp 0.2s ease forwards;
     }
 
-    #thinking.visible { display: flex; align-items: center; gap: 10px; }
+    #thinking.visible { display: flex; align-items: center; gap: 5px; }
 
     .think-dot {
-      width: 14px;
-      height: 14px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
       background: var(--accent);
       opacity: 0.4;
@@ -180,25 +179,25 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 20px;
+      gap: 10px;
       opacity: 0.35;
       pointer-events: none;
-      padding-bottom: 60px;
+      padding-bottom: 40px;
     }
 
-    #empty svg { width: 80px; height: 80px; }
+    #empty svg { width: 32px; height: 32px; }
 
     #empty p {
-      font-size: 44px;
+      font-size: 13px;
       color: var(--text-dim);
       text-align: center;
       line-height: 1.6;
-      max-width: 400px;
+      max-width: 160px;
     }
 
     #footer {
-      padding: 18px 28px 22px;
-      border-top: 2px solid var(--border);
+      padding: 8px 14px 10px;
+      border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -207,21 +206,21 @@
     }
 
     #footer-hint {
-      font-size: 36px;
+      font-size: 11px;
       color: var(--text-dim);
       opacity: 0.6;
     }
 
     #clear-btn {
-      font-size: 36px;
+      font-size: 11px;
       color: var(--text-dim);
       background: none;
       border: none;
       cursor: pointer;
-      padding: 6px 16px;
-      border-radius: 8px;
+      padding: 2px 6px;
+      border-radius: 4px;
       transition: color 0.2s, background 0.2s;
-      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
     }
 
     #clear-btn:hover {
