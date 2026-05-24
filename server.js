@@ -3,6 +3,7 @@ const cors = require("cors");
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
+const { createClient } = require("redis");
 
 // --- PRIVATE ENDPOINT OWNER ---
 const OWNER_UUID = "de2acd52-0c3c-4a84-af23-b5f865245c12";
@@ -12,30 +13,36 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// --- STANDARD LINE SESSION STORAGE ---
-const sessions = {};
-const geminiSessions = {};
-const groqSessions = {};
+// --- REDIS CLIENT ---
+const redis = createClient({ url: process.env.REDIS_URL });
+redis.on("error", (err) => console.error("Redis error:", err));
+redis.connect().then(() => console.log("Redis connected."));
+
+// --- REDIS KEY HELPERS ---
+const KEY_SESSION     = (uuid) => `session:${uuid}`;
+const KEY_GEMINI      = (uuid) => `gemini:${uuid}`;
+const KEY_GROQ        = (uuid) => `groq:${uuid}`;
+const KEY_SYSPROMPT   = (uuid) => `sysprompt:${uuid}`;
+const KEY_HISTORY     = (uuid) => `history:${uuid}`;
+const KEY_DARKMODE    = (uuid) => `darkmode:${uuid}`;
+const KEY_LATEST      = "latest_uuid";
+
+// TTL: 7 days for session data
+const SESSION_TTL = 60 * 60 * 24 * 7;
+// Display history: last 20 messages stored for webpage reload
+const HISTORY_MAX = 20;
+
+// --- IN-MEMORY (non-persistent, lightweight) ---
 const pending = {};
-const systemPrompts = {};
 const pendingHandoffs = {};
 
 // --- ENGINE LIGHT LINE: object tracking per owner ---
-// Structure: engineRegistry[avatar_uuid] = { object_uuid: lastSeenTimestamp }
 const engineRegistry = {};
-const ENGINE_MAX_SCRIPTS  = 3;
-const ENGINE_TIMEOUT_MS   = 2 * 60 * 60 * 1000; // 2 hours
-
-const HANDOFF_URLS = {
-  HUD: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/HUD.md",
-  Cielomar: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Cielomar.md",
-  Flake: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Flake.md",
-  Inventory: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Inventory.md",
-  Roles: "https://raw.githubusercontent.com/LolySL/sl-claude-relay/main/handoffs/Roles.md"
-};
+const ENGINE_MAX_SCRIPTS = 3;
+const ENGINE_TIMEOUT_MS  = 2 * 60 * 60 * 1000;
 
 // ============================================================
-// HELPER — clean expired Engine registrations for one owner
+// HELPER — clean expired Engine registrations
 // ============================================================
 
 function cleanExpiredEngines(avatar_uuid) {
@@ -53,6 +60,65 @@ function cleanExpiredEngines(avatar_uuid) {
 }
 
 // ============================================================
+// REDIS SESSION HELPERS
+// ============================================================
+
+async function getSession(key) {
+  try {
+    const data = await redis.get(key);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function saveSession(key, messages) {
+  try {
+    await redis.setEx(key, SESSION_TTL, JSON.stringify(messages));
+  } catch (e) {
+    console.error("Redis save error:", e);
+  }
+}
+
+async function getSystemPrompt(uuid) {
+  try {
+    return await redis.get(KEY_SYSPROMPT(uuid)) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveSystemPrompt(uuid, prompt) {
+  try {
+    await redis.setEx(KEY_SYSPROMPT(uuid), SESSION_TTL, prompt);
+  } catch (e) {
+    console.error("Redis sysprompt save error:", e);
+  }
+}
+
+async function appendDisplayHistory(uuid, role, text) {
+  try {
+    const key = KEY_HISTORY(uuid);
+    const raw = await redis.get(key);
+    let history = raw ? JSON.parse(raw) : [];
+    history.push({ role, text });
+    if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
+    await redis.setEx(key, SESSION_TTL, JSON.stringify(history));
+  } catch (e) {
+    console.error("Redis history append error:", e);
+  }
+}
+
+async function getDisplayHistory(uuid) {
+  try {
+    const raw = await redis.get(KEY_HISTORY(uuid));
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ============================================================
 // STANDARD LINE — Claude /chat
 // ============================================================
 
@@ -63,27 +129,26 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  if (!sessions[avatar_uuid]) {
-    sessions[avatar_uuid] = [];
-  }
-
   pending[avatar_uuid] = {
     avatar_uuid,
     user_message: message,
     reply: null
   };
 
-  sessions[avatar_uuid].push({ role: "user", content: message });
+  const sessionKey = KEY_SESSION(avatar_uuid);
+  let messages = await getSession(sessionKey);
+  messages.push({ role: "user", content: message });
+  if (messages.length > 50) messages = messages.slice(-20);
+  await saveSession(sessionKey, messages);
 
-  if (sessions[avatar_uuid].length > 50) {
-    sessions[avatar_uuid] = sessions[avatar_uuid].slice(-20);
-  }
+  await redis.set(KEY_LATEST, avatar_uuid);
 
+  const storedPrompt = await getSystemPrompt(avatar_uuid);
   const systemPrompt = req.body.system_prompt
     ? req.body.system_prompt
-    : systemPrompts[avatar_uuid]
-    ? systemPrompts[avatar_uuid]
-    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen. Time in the context feed is SL time, which is US Pacific time (UTC-7 in summer, UTC-8 in winter).`
+    : storedPrompt
+    ? storedPrompt
+    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen. Time in the context feed is SL time, which is US Pacific time (UTC-7 in summer, UTC-8 in winter).`;
 
   try {
     const response = await axios.post(
@@ -92,7 +157,7 @@ app.post("/chat", async (req, res) => {
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
         system: systemPrompt,
-        messages: sessions[avatar_uuid]
+        messages
       },
       {
         headers: {
@@ -111,7 +176,11 @@ app.post("/chat", async (req, res) => {
       reply = "Working... ready.";
     }
 
-    sessions[avatar_uuid].push({ role: "assistant", content: reply });
+    messages.push({ role: "assistant", content: reply });
+    await saveSession(sessionKey, messages);
+
+    await appendDisplayHistory(avatar_uuid, "user", message);
+    await appendDisplayHistory(avatar_uuid, "assistant", reply);
 
     if (pending[avatar_uuid]) {
       pending[avatar_uuid].reply = reply;
@@ -148,57 +217,44 @@ app.post("/gemini-chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  if (!geminiSessions[avatar_uuid]) {
-    geminiSessions[avatar_uuid] = [];
-  }
-
   pending[avatar_uuid] = {
     avatar_uuid,
     user_message: message,
     reply: null
   };
 
-  geminiSessions[avatar_uuid].push({
-    role: "user",
-    parts: [{ text: message }]
-  });
+  const sessionKey = KEY_GEMINI(avatar_uuid);
+  let messages = await getSession(sessionKey);
+  messages.push({ role: "user", parts: [{ text: message }] });
+  if (messages.length > 50) messages = messages.slice(-20);
+  await saveSession(sessionKey, messages);
 
-  if (geminiSessions[avatar_uuid].length > 50) {
-    geminiSessions[avatar_uuid] = geminiSessions[avatar_uuid].slice(-20);
-  }
-
+  const storedPrompt = await getSystemPrompt(avatar_uuid);
   const systemInstruction = system_prompt
     ? system_prompt
-    : systemPrompts[avatar_uuid]
-    ? systemPrompts[avatar_uuid]
+    : storedPrompt
+    ? storedPrompt
     : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words.`;
 
   try {
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemini_key}`,
       {
-        system_instruction: {
-          parts: [{ text: systemInstruction }]
-        },
-        contents: geminiSessions[avatar_uuid]
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: messages
       },
-      {
-        headers: {
-          "content-type": "application/json"
-        }
-      }
+      { headers: { "content-type": "application/json" } }
     );
 
     const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't think of anything to say. Which is unusual.";
 
-    geminiSessions[avatar_uuid].push({
-      role: "model",
-      parts: [{ text: reply }]
-    });
+    messages.push({ role: "model", parts: [{ text: reply }] });
+    await saveSession(sessionKey, messages);
 
-    if (pending[avatar_uuid]) {
-      pending[avatar_uuid].reply = reply;
-    }
+    await appendDisplayHistory(avatar_uuid, "user", message);
+    await appendDisplayHistory(avatar_uuid, "assistant", reply);
+
+    if (pending[avatar_uuid]) pending[avatar_uuid].reply = reply;
 
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
     res.json({ reply: trimmed });
@@ -212,9 +268,7 @@ app.post("/gemini-chat", async (req, res) => {
     if (status === 401 || status === 403) userMsg = "Invalid Gemini API key. Please re-enter it via the settings menu.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
-    if (pending[avatar_uuid]) {
-      pending[avatar_uuid].reply = userMsg;
-    }
+    if (pending[avatar_uuid]) pending[avatar_uuid].reply = userMsg;
 
     console.error("Gemini API error:", status, errMsg);
     res.json({ reply: userMsg });
@@ -232,26 +286,23 @@ app.post("/groq-chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  if (!groqSessions[avatar_uuid]) {
-    groqSessions[avatar_uuid] = [];
-  }
-
   pending[avatar_uuid] = {
     avatar_uuid,
     user_message: message,
     reply: null
   };
 
-  groqSessions[avatar_uuid].push({ role: "user", content: message });
+  const sessionKey = KEY_GROQ(avatar_uuid);
+  let messages = await getSession(sessionKey);
+  messages.push({ role: "user", content: message });
+  if (messages.length > 50) messages = messages.slice(-20);
+  await saveSession(sessionKey, messages);
 
-  if (groqSessions[avatar_uuid].length > 50) {
-    groqSessions[avatar_uuid] = groqSessions[avatar_uuid].slice(-20);
-  }
-
+  const storedPrompt = await getSystemPrompt(avatar_uuid);
   const systemInstruction = system_prompt
     ? system_prompt
-    : systemPrompts[avatar_uuid]
-    ? systemPrompts[avatar_uuid]
+    : storedPrompt
+    ? storedPrompt
     : `You are a helpful AI assistant in Second Life. The user's avatar name is ${avatar_name}. Keep responses under 100 words.`;
 
   try {
@@ -262,7 +313,7 @@ app.post("/groq-chat", async (req, res) => {
         max_tokens: 200,
         messages: [
           { role: "system", content: systemInstruction },
-          ...groqSessions[avatar_uuid]
+          ...messages
         ]
       },
       {
@@ -275,11 +326,13 @@ app.post("/groq-chat", async (req, res) => {
 
     const reply = response.data.choices?.[0]?.message?.content || "I have nothing to say. Which is unlike me.";
 
-    groqSessions[avatar_uuid].push({ role: "assistant", content: reply });
+    messages.push({ role: "assistant", content: reply });
+    await saveSession(sessionKey, messages);
 
-    if (pending[avatar_uuid]) {
-      pending[avatar_uuid].reply = reply;
-    }
+    await appendDisplayHistory(avatar_uuid, "user", message);
+    await appendDisplayHistory(avatar_uuid, "assistant", reply);
+
+    if (pending[avatar_uuid]) pending[avatar_uuid].reply = reply;
 
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
     res.json({ reply: trimmed });
@@ -292,9 +345,7 @@ app.post("/groq-chat", async (req, res) => {
     if (status === 401) userMsg = "Invalid Groq API key. Please re-enter it via the settings menu.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
-    if (pending[avatar_uuid]) {
-      pending[avatar_uuid].reply = userMsg;
-    }
+    if (pending[avatar_uuid]) pending[avatar_uuid].reply = userMsg;
 
     console.error("Groq API error:", status, errMsg);
     res.json({ reply: userMsg });
@@ -355,8 +406,6 @@ app.post("/groq-chat-light", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — The Engine — /groq-chat-engine
-// Stateless. Tracks active object UUIDs per owner (max 3).
-// Ping refreshes registration timestamp.
 // ============================================================
 
 app.post("/groq-chat-engine", async (req, res) => {
@@ -366,7 +415,6 @@ app.post("/groq-chat-engine", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Clean expired registrations for this owner
   cleanExpiredEngines(avatar_uuid);
 
   if (!engineRegistry[avatar_uuid]) {
@@ -377,14 +425,12 @@ app.post("/groq-chat-engine", async (req, res) => {
   const alreadyRegistered = reg.hasOwnProperty(object_uuid);
   const activeCount = Object.keys(reg).length;
 
-  // If not registered and already at limit — deny
   if (!alreadyRegistered && activeCount >= ENGINE_MAX_SCRIPTS) {
     return res.json({
       reply: "You already have 3 Engine scripts running. Please deactivate one before activating another. This keeps all your characters responsive and stable."
     });
   }
 
-  // Register or refresh timestamp
   reg[object_uuid] = Date.now();
 
   const systemInstruction = system_prompt
@@ -428,7 +474,7 @@ app.post("/groq-chat-engine", async (req, res) => {
 });
 
 // ============================================================
-// ENGINE PING — refreshes object registration timestamp
+// ENGINE PING
 // ============================================================
 
 app.post("/engine-ping", (req, res) => {
@@ -448,49 +494,50 @@ app.post("/engine-ping", (req, res) => {
 });
 
 // ============================================================
-// HANDOFF
+// HANDOFF — all files served from relay filesystem
+// Protected by owner UUID
 // ============================================================
 
-app.post("/sethandoff", async (req, res) => {
-  const { avatar_uuid, project } = req.body;
+app.post("/sethandoff", (req, res) => {
+  const { avatar_uuid, file } = req.body;
 
-  if (!avatar_uuid || !project) {
-    return res.status(400).json({ error: "Missing required fields" });
+  if (!avatar_uuid || avatar_uuid !== OWNER_UUID) {
+    return res.status(403).json({ error: "Unauthorized." });
   }
 
-  const url = HANDOFF_URLS[project];
-  if (!url) {
-    return res.status(400).json({ error: "Unknown project: " + project });
+  if (!file || typeof file !== "string") {
+    return res.status(400).json({ error: "Missing file name." });
   }
 
-  try {
-    const response = await axios.get(url);
-    const content = response.data;
+  const safeName = path.basename(file);
+  if (!safeName.endsWith(".md")) {
+    return res.status(400).json({ error: "Only .md files allowed." });
+  }
 
-    systemPrompts[avatar_uuid] = content;
+  const filePath = path.join(__dirname, "handoffs", safeName);
+
+  fs.readFile(filePath, "utf8", async (err, data) => {
+    if (err) {
+      return res.status(404).json({ error: "File not found: " + safeName });
+    }
+
+    await saveSystemPrompt(avatar_uuid, data);
     delete pending[avatar_uuid];
 
-    const confirmMsg = "Context loaded. Claude is ready.";
     pending[avatar_uuid] = {
       avatar_uuid,
       user_message: "handoff",
-      reply: confirmMsg
+      reply: "Context loaded. Claude is ready."
     };
 
     res.json({ ok: true });
-
-  } catch (err) {
-    console.error("Handoff fetch error:", err.message);
-    res.status(500).json({ error: "Failed to fetch handoff file" });
-  }
+  });
 });
 
 app.get("/gethandoff", (req, res) => {
   const uuid = req.query.uuid;
 
-  if (!uuid) {
-    return res.json({});
-  }
+  if (!uuid) return res.json({});
 
   if (pendingHandoffs[uuid]) {
     const content = pendingHandoffs[uuid];
@@ -508,9 +555,7 @@ app.get("/gethandoff", (req, res) => {
 app.get("/poll", (req, res) => {
   const uuid = req.query.uuid;
 
-  if (!uuid) {
-    return res.json({});
-  }
+  if (!uuid) return res.json({});
 
   if (pending[uuid]) {
     const data = pending[uuid];
@@ -524,53 +569,84 @@ app.get("/poll", (req, res) => {
 });
 
 // ============================================================
-// CLEAR — fixed to actually clear all sessions when "all"
+// HISTORY — returns last N display messages for webpage reload
 // ============================================================
 
-app.post("/clear", (req, res) => {
+app.get("/history", async (req, res) => {
+  const uuid = req.query.uuid;
+
+  if (!uuid) return res.json({ messages: [] });
+
+  const history = await getDisplayHistory(uuid);
+  const darkmode = await redis.get(KEY_DARKMODE(uuid));
+
+  res.json({
+    messages: history,
+    dark: darkmode === "1"
+  });
+});
+
+// ============================================================
+// DARK MODE — store preference per avatar
+// ============================================================
+
+app.post("/darkmode", async (req, res) => {
+  const { avatar_uuid, dark } = req.body;
+
+  if (!avatar_uuid) return res.json({ ok: false });
+
+  await redis.setEx(KEY_DARKMODE(avatar_uuid), SESSION_TTL, dark ? "1" : "0");
+  res.json({ ok: true });
+});
+
+// ============================================================
+// CLEAR
+// ============================================================
+
+app.post("/clear", async (req, res) => {
   const { avatar_uuid } = req.body;
 
-  if (!avatar_uuid) {
-    return res.json({ ok: false });
-  }
+  if (!avatar_uuid) return res.json({ ok: false });
 
   if (avatar_uuid === "all") {
-    // Clear everything
-    Object.keys(sessions).forEach(k => delete sessions[k]);
-    Object.keys(geminiSessions).forEach(k => delete geminiSessions[k]);
-    Object.keys(groqSessions).forEach(k => delete groqSessions[k]);
     Object.keys(pending).forEach(k => delete pending[k]);
-    Object.keys(systemPrompts).forEach(k => delete systemPrompts[k]);
     Object.keys(pendingHandoffs).forEach(k => delete pendingHandoffs[k]);
     Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
+    // Note: Redis keys expire naturally via TTL — no bulk delete needed
   } else {
-    delete sessions[avatar_uuid];
-    delete geminiSessions[avatar_uuid];
-    delete groqSessions[avatar_uuid];
     delete pending[avatar_uuid];
-    delete systemPrompts[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
     delete engineRegistry[avatar_uuid];
+    try {
+      await redis.del(KEY_SESSION(avatar_uuid));
+      await redis.del(KEY_GEMINI(avatar_uuid));
+      await redis.del(KEY_GROQ(avatar_uuid));
+      await redis.del(KEY_SYSPROMPT(avatar_uuid));
+      await redis.del(KEY_HISTORY(avatar_uuid));
+    } catch (e) {
+      console.error("Redis clear error:", e);
+    }
   }
 
   res.json({ ok: true });
 });
 
 // ============================================================
-// MISC
+// LATEST
 // ============================================================
 
-app.get("/latest", (req, res) => {
-  const uuids = Object.keys(sessions);
-  if (uuids.length === 0) return res.json({});
-  res.json({ avatar_uuid: uuids[uuids.length - 1] });
+app.get("/latest", async (req, res) => {
+  try {
+    const uuid = await redis.get(KEY_LATEST);
+    if (!uuid) return res.json({});
+    res.json({ avatar_uuid: uuid });
+  } catch (e) {
+    res.json({});
+  }
 });
 
 // ============================================================
-// PRIVATE HANDOFF — Loly's personal files
-// Serves .md files from handoffs/ folder directly from relay
-// Protected by owner UUID — rejects all other requests
-// Not affected by /clear or any other general endpoint
+// PRIVATE HANDOFF
 // ============================================================
 
 app.post("/handoff-private", (req, res) => {
@@ -584,7 +660,6 @@ app.post("/handoff-private", (req, res) => {
     return res.status(400).json({ error: "Missing file name." });
   }
 
-  // Sanitize — only allow simple filenames, no path traversal
   const safeName = path.basename(file);
   if (!safeName.endsWith(".md")) {
     return res.status(400).json({ error: "Only .md files allowed." });
@@ -599,6 +674,10 @@ app.post("/handoff-private", (req, res) => {
     res.json({ content: data });
   });
 });
+
+// ============================================================
+// PING
+// ============================================================
 
 app.get("/ping", (req, res) => {
   res.json({ ok: true });
