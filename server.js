@@ -120,6 +120,7 @@ async function getDisplayHistory(uuid) {
 
 // ============================================================
 // STANDARD LINE — Claude /chat
+// HUD Pro only. Stateful. Redis session history.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
@@ -208,6 +209,7 @@ app.post("/chat", async (req, res) => {
 
 // ============================================================
 // STANDARD LINE — Gemini /gemini-chat
+// HUD Pro only. Stateful. Redis session history.
 // ============================================================
 
 app.post("/gemini-chat", async (req, res) => {
@@ -277,6 +279,7 @@ app.post("/gemini-chat", async (req, res) => {
 
 // ============================================================
 // STANDARD LINE — Groq /groq-chat
+// HUD Pro only. Stateful. Redis session history.
 // ============================================================
 
 app.post("/groq-chat", async (req, res) => {
@@ -353,8 +356,8 @@ app.post("/groq-chat", async (req, res) => {
 });
 
 // ============================================================
-// LIGHT LINE — Marvin / Flowers — /groq-chat-light
-// Stateless. No session storage. Object UUID only.
+// LIGHT LINE — Groq /groq-chat-light
+// Marvin, Mirror, HUD Light (groq). Stateless. No Redis.
 // ============================================================
 
 app.post("/groq-chat-light", async (req, res) => {
@@ -400,6 +403,105 @@ app.post("/groq-chat-light", async (req, res) => {
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
     console.error("Groq Light API error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+// ============================================================
+// LIGHT LINE — Claude /claude-chat-light
+// HUD Light (claude). Stateless. No Redis.
+// ============================================================
+
+app.post("/claude-chat-light", async (req, res) => {
+  const { object_uuid, message, claude_key, system_prompt } = req.body;
+
+  if (!object_uuid || !message || !claude_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const systemInstruction = system_prompt
+    ? system_prompt
+    : "You are a helpful AI assistant in Second Life. Keep responses under 100 words.";
+
+  try {
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        system: systemInstruction,
+        messages: [
+          { role: "user", content: message }
+        ]
+      },
+      {
+        headers: {
+          "x-api-key": claude_key,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.content[0].text || "I have nothing to say. Which is unusual.";
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 401) userMsg = "Invalid Claude API key. Please check your API key notecard.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    console.error("Claude Light API error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+// ============================================================
+// LIGHT LINE — Gemini /gemini-chat-light
+// HUD Light (gemini). Stateless. No Redis.
+// ============================================================
+
+app.post("/gemini-chat-light", async (req, res) => {
+  const { object_uuid, message, gemini_key, system_prompt } = req.body;
+
+  if (!object_uuid || !message || !gemini_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const systemInstruction = system_prompt
+    ? system_prompt
+    : "You are a helpful AI assistant in Second Life. Keep responses under 100 words.";
+
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemini_key}`,
+      {
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: [
+          { role: "user", parts: [{ text: message }] }
+        ]
+      },
+      { headers: { "content-type": "application/json" } }
+    );
+
+    const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "I have nothing to say. Which is unusual.";
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 400) userMsg = "Bad request. Check your Gemini API key format.";
+    if (status === 401 || status === 403) userMsg = "Invalid Gemini API key. Please check your API key notecard.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    console.error("Gemini Light API error:", status, errMsg);
     res.json({ reply: userMsg });
   }
 });
