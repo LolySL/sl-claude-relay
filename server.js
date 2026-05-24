@@ -552,20 +552,22 @@ app.get("/gethandoff", (req, res) => {
 // POLL
 // ============================================================
 
-app.get("/poll", (req, res) => {
+app.get("/poll", async (req, res) => {
   const uuid = req.query.uuid;
 
   if (!uuid) return res.json({});
+
+  const dark = await redis.get(KEY_DARKMODE(uuid));
 
   if (pending[uuid]) {
     const data = pending[uuid];
     if (data.reply) {
       delete pending[uuid];
     }
-    return res.json(data);
+    return res.json({ ...data, dark: dark === "1" });
   }
 
-  res.json({});
+  res.json({ dark: dark === "1" });
 });
 
 // ============================================================

@@ -20,15 +20,15 @@
     }
 
     body.dark {
-  --bg:        #222325;
-  --surface:   #2c2d30;
-  --border:    #3a3b3e;
-  --text:      #f7f5f2;
-  --text-dim:  #8a8a8a;
-  --accent:    #cc785c;
-  --user-bg:   #2c2d30;
-  --claude-bg: transparent;
-}
+      --bg:        #222325;
+      --surface:   #2c2d30;
+      --border:    #3a3b3e;
+      --text:      #f7f5f2;
+      --text-dim:  #8a8a8a;
+      --accent:    #cc785c;
+      --user-bg:   #2c2d30;
+      --claude-bg: transparent;
+    }
 
     html, body {
       width: 100%;
@@ -153,10 +153,10 @@
     }
 
     .msg-bubble.assistant {
-  background: var(--claude-bg);
-  border: none;
-  padding-left: 2px;
-  color: var(--text);
+      background: var(--claude-bg);
+      border: none;
+      padding-left: 2px;
+      color: var(--text);
     }
 
     #thinking {
@@ -274,8 +274,6 @@
 
 <script>
   const RELAY = window.location.origin;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('dark') === '1') document.body.classList.add('dark');
   let avatarUuid = null;
   let userMessageShown = false;
 
@@ -284,6 +282,27 @@
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
 
+  async function loadHistory(uuid) {
+    try {
+      const res = await fetch(`${RELAY}/history?uuid=${uuid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.dark) {
+        document.body.classList.add('dark');
+      } else {
+        document.body.classList.remove('dark');
+      }
+
+      if (data.messages && data.messages.length > 0) {
+        emptyEl.style.display = 'none';
+        data.messages.forEach(msg => {
+          addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.text, '', true);
+        });
+      }
+    } catch(e) {}
+  }
+
   async function getLatestUuid() {
     try {
       const res = await fetch(`${RELAY}/latest`);
@@ -291,6 +310,7 @@
       if (data.avatar_uuid) {
         avatarUuid = data.avatar_uuid;
         statusDot.className = 'active';
+        await loadHistory(avatarUuid);
       }
     } catch(e) {}
   }
@@ -304,6 +324,15 @@
       if (data.avatar_uuid && !avatarUuid) {
         avatarUuid = data.avatar_uuid;
         statusDot.className = 'active';
+        await loadHistory(avatarUuid);
+      }
+
+      if (typeof data.dark !== 'undefined') {
+        if (data.dark) {
+          document.body.classList.add('dark');
+        } else {
+          document.body.classList.remove('dark');
+        }
       }
 
       let slTime = '';
@@ -312,7 +341,6 @@
         userMessageShown = true;
         hideThinking();
 
-        // Extract SL time from context before stripping it
         let timeMatch = data.user_message.match(/SL (\d+:\d+)/);
         slTime = timeMatch ? timeMatch[1] + ' SL' : '';
 
@@ -331,18 +359,19 @@
     } catch(e) {}
   }
 
-  function addMessage(role, text, time = '') {
+  function addMessage(role, text, time = '', silent = false) {
     emptyEl.style.display = 'none';
 
     const group = document.createElement('div');
     group.className = 'msg-group';
+    if (silent) group.style.animation = 'none';
 
     const label = document.createElement('div');
     label.className = `msg-label ${role === 'user' ? 'you' : 'claude'}`;
     label.textContent = (role === 'user' ? 'You' : 'Claude') + (time ? '  ' + time : '');
 
     const bubble = document.createElement('div');
-    bubble.className = `msg-bubble ${role}`;
+    bubble.className = `msg-bubble ${role === 'user' ? 'user' : 'assistant'}`;
     bubble.innerHTML = text.replace(/\n/g, '<br>');
 
     group.appendChild(label);
