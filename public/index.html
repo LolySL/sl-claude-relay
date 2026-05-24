@@ -282,6 +282,12 @@
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
 
+  // Read UUID from URL query string first.
+  // Pro HUD passes avatar_uuid, Light HUD passes object_uuid.
+  // Falls back to /latest only if no UUID in URL (e.g. browser direct load).
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlUuid = urlParams.get('uuid');
+
   async function loadHistory(uuid) {
     try {
       const res = await fetch(`${RELAY}/history?uuid=${uuid}`);
@@ -406,9 +412,21 @@
     statusDot.className = 'active';
   }
 
+  // Start: use URL uuid if present, otherwise fall back to /latest
+  async function init() {
+    if (urlUuid) {
+      avatarUuid = urlUuid;
+      statusDot.className = 'active';
+      await loadHistory(avatarUuid);
+    } else {
+      await getLatestUuid();
+    }
+    poll();
+  }
+
   setInterval(poll, 1500);
   setInterval(() => fetch(`${RELAY}/ping`), 600000);
-  getLatestUuid().then(() => poll());
+  init();
 </script>
 </body>
 </html>

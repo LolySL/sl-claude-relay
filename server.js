@@ -358,6 +358,8 @@ app.post("/groq-chat", async (req, res) => {
 // ============================================================
 // LIGHT LINE — Groq /groq-chat-light
 // Marvin, Mirror, HUD Light (groq). Stateless. No Redis.
+// Uses object_uuid for pending — no avatar_uuid needed.
+// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/groq-chat-light", async (req, res) => {
@@ -365,6 +367,16 @@ app.post("/groq-chat-light", async (req, res) => {
 
   if (!object_uuid || !message || !groq_key) {
     return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const isSummary = object_uuid.startsWith("sum_");
+
+  if (!isSummary) {
+    pending[object_uuid] = {
+      avatar_uuid: object_uuid,
+      user_message: message,
+      reply: null
+    };
   }
 
   const systemInstruction = system_prompt
@@ -392,6 +404,11 @@ app.post("/groq-chat-light", async (req, res) => {
 
     const reply = response.data.choices?.[0]?.message?.content || "I have nothing to say. Which is unlike me.";
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = trimmed;
+    }
+
     res.json({ reply: trimmed });
 
   } catch (err) {
@@ -402,6 +419,10 @@ app.post("/groq-chat-light", async (req, res) => {
     if (status === 401) userMsg = "Invalid Groq API key. Please check your API key notecard.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = userMsg;
+    }
+
     console.error("Groq Light API error:", status, errMsg);
     res.json({ reply: userMsg });
   }
@@ -410,6 +431,8 @@ app.post("/groq-chat-light", async (req, res) => {
 // ============================================================
 // LIGHT LINE — Claude /claude-chat-light
 // HUD Light (claude). Stateless. No Redis.
+// Uses object_uuid for pending — no avatar_uuid needed.
+// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/claude-chat-light", async (req, res) => {
@@ -417,6 +440,16 @@ app.post("/claude-chat-light", async (req, res) => {
 
   if (!object_uuid || !message || !claude_key) {
     return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const isSummary = object_uuid.startsWith("sum_");
+
+  if (!isSummary) {
+    pending[object_uuid] = {
+      avatar_uuid: object_uuid,
+      user_message: message,
+      reply: null
+    };
   }
 
   const systemInstruction = system_prompt
@@ -445,6 +478,11 @@ app.post("/claude-chat-light", async (req, res) => {
 
     const reply = response.data.content[0].text || "I have nothing to say. Which is unusual.";
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = trimmed;
+    }
+
     res.json({ reply: trimmed });
 
   } catch (err) {
@@ -455,6 +493,10 @@ app.post("/claude-chat-light", async (req, res) => {
     if (status === 401) userMsg = "Invalid Claude API key. Please check your API key notecard.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = userMsg;
+    }
+
     console.error("Claude Light API error:", status, errMsg);
     res.json({ reply: userMsg });
   }
@@ -463,6 +505,8 @@ app.post("/claude-chat-light", async (req, res) => {
 // ============================================================
 // LIGHT LINE — Gemini /gemini-chat-light
 // HUD Light (gemini). Stateless. No Redis.
+// Uses object_uuid for pending — no avatar_uuid needed.
+// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/gemini-chat-light", async (req, res) => {
@@ -470,6 +514,16 @@ app.post("/gemini-chat-light", async (req, res) => {
 
   if (!object_uuid || !message || !gemini_key) {
     return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const isSummary = object_uuid.startsWith("sum_");
+
+  if (!isSummary) {
+    pending[object_uuid] = {
+      avatar_uuid: object_uuid,
+      user_message: message,
+      reply: null
+    };
   }
 
   const systemInstruction = system_prompt
@@ -490,6 +544,11 @@ app.post("/gemini-chat-light", async (req, res) => {
 
     const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "I have nothing to say. Which is unusual.";
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = trimmed;
+    }
+
     res.json({ reply: trimmed });
 
   } catch (err) {
@@ -500,6 +559,10 @@ app.post("/gemini-chat-light", async (req, res) => {
     if (status === 400) userMsg = "Bad request. Check your Gemini API key format.";
     if (status === 401 || status === 403) userMsg = "Invalid Gemini API key. Please check your API key notecard.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    if (!isSummary && pending[object_uuid]) {
+      pending[object_uuid].reply = userMsg;
+    }
 
     console.error("Gemini Light API error:", status, errMsg);
     res.json({ reply: userMsg });
@@ -716,7 +779,6 @@ app.post("/clear", async (req, res) => {
     Object.keys(pending).forEach(k => delete pending[k]);
     Object.keys(pendingHandoffs).forEach(k => delete pendingHandoffs[k]);
     Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
-    // Note: Redis keys expire naturally via TTL — no bulk delete needed
   } else {
     delete pending[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
