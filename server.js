@@ -842,6 +842,7 @@ app.post("/pastebin", async (req, res) => {
 
   } catch (err) {
     console.error("Pastebin post error:", err.message);
+    console.error("Pastebin response data:", JSON.stringify(err.response?.data));
     return res.status(500).json({ error: "Failed to reach Pastebin." });
   }
 });
