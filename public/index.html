@@ -403,8 +403,7 @@
 
   function refreshView() {
     if (!avatarUuid) return;
-    const url = RELAY + '?uuid=' + avatarUuid;
-    window.location.href = url;
+    poll();
   }
 
   async function loadHistory() {
@@ -421,7 +420,10 @@
       }
 
       if (data.messages && data.messages.length > 0) {
-        clearMessages();
+        // Clear messages without touching view state
+        messagesEl.innerHTML = '';
+        messagesEl.appendChild(emptyEl);
+        messagesEl.appendChild(thinkingEl);
         emptyEl.style.display = 'none';
         data.messages.forEach(msg => {
           addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.text, '', true);
@@ -542,9 +544,14 @@
           }
           chatWasActive = true;
         } else {
+          // Only switch to OFF if we were previously ON in this session
+          if (chatWasActive) {
+            chatWasActive = false;
+            showOffScreen();
+            return;
+          }
+          // If chat was never active, stay on whatever view is current
           chatWasActive = false;
-          showOffScreen();
-          return;
         }
       }
 
