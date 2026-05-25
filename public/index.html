@@ -406,30 +406,37 @@
     poll();
   }
 
-  async function loadHistory() {
-    if (!avatarUuid) return;
+  async function exportChat() {
+    if (!avatarUuid) {
+      showExportStatus('No session active.');
+      return;
+    }
+    showExportStatus('Exporting...');
     try {
-      const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
-      if (!res.ok) return;
+      const res = await fetch(`${RELAY}/pastebin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_uuid: avatarUuid })
+      });
       const data = await res.json();
-
-      if (data.dark) {
-        document.body.classList.add('dark');
+      if (data.url) {
+        showExportStatus('Done!');
+        window.open(data.url, '_blank');
       } else {
-        document.body.classList.remove('dark');
+        showExportStatus(data.error || 'Export failed.');
       }
+    } catch(e) {
+      showExportStatus('Network error.');
+    }
+  }
 
-      if (data.messages && data.messages.length > 0) {
-        // Clear messages without touching view state
-        messagesEl.innerHTML = '';
-        messagesEl.appendChild(emptyEl);
-        messagesEl.appendChild(thinkingEl);
-        emptyEl.style.display = 'none';
-        data.messages.forEach(msg => {
-          addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.text, '', true);
-        });
-      }
-    } catch(e) {}
+  function showExportStatus(msg) {
+    const btn = document.querySelector('.footer-btn[onclick="exportChat()"]');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = msg;
+      setTimeout(() => { btn.textContent = orig; }, 3000);
+    }
   }
 
   async function exportChat() {
