@@ -407,36 +407,29 @@
   }
 
   async function exportChat() {
-    if (!avatarUuid) {
-      showExportStatus('No session active.');
-      return;
-    }
-    showExportStatus('Exporting...');
+    if (!avatarUuid) return;
     try {
-      const res = await fetch(`${RELAY}/pastebin`, {
+      const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.messages || data.messages.length === 0) return;
+
+      let content = '';
+      data.messages.forEach(msg => {
+        const role = msg.role === 'user' ? 'You' : 'REALai';
+        content += role + ':\n' + msg.text + '\n\n';
+      });
+
+      const pbRes = await fetch(`${RELAY}/pastebin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_uuid: avatarUuid })
+        body: JSON.stringify({ content, title: 'REALai HUD Export' })
       });
-      const data = await res.json();
-      if (data.url) {
-        showExportStatus('Done!');
-        window.open(data.url, '_blank');
-      } else {
-        showExportStatus(data.error || 'Export failed.');
+      const pbData = await pbRes.json();
+      if (pbData.url) {
+        window.open(pbData.url, '_blank');
       }
-    } catch(e) {
-      showExportStatus('Network error.');
-    }
-  }
-
-  function showExportStatus(msg) {
-    const btn = document.querySelector('.footer-btn[onclick="exportChat()"]');
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = msg;
-      setTimeout(() => { btn.textContent = orig; }, 3000);
-    }
+    } catch(e) {}
   }
 
   async function exportChat() {
