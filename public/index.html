@@ -42,6 +42,74 @@
       overflow: hidden;
     }
 
+    /* ===================== OFF SCREEN ===================== */
+
+    #off-screen {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #222325;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding-top: 28%;
+    }
+
+    #off-screen.visible {
+      display: flex;
+    }
+
+    #off-logo {
+      font-family: 'Arial Black', 'Segoe UI Black', sans-serif;
+      font-weight: 900;
+      font-size: 64px;
+      letter-spacing: -1px;
+      color: #ffffff;
+      text-transform: uppercase;
+      line-height: 1;
+      margin-bottom: 52px;
+    }
+
+    #off-logo span.lower {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 64px;
+      text-transform: lowercase;
+    }
+
+    #off-product {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 400;
+      font-size: 36px;
+      color: #ffffff;
+      letter-spacing: 0.01em;
+      margin-bottom: 8px;
+    }
+
+    #off-sub {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 400;
+      font-size: 22px;
+      color: #888888;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    #off-footer {
+      position: fixed;
+      bottom: 32px;
+      left: 0; right: 0;
+      text-align: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 400;
+      font-size: 16px;
+      color: #ffffff;
+      opacity: 0.75;
+      letter-spacing: 0.02em;
+    }
+
+    /* ===================== CHAT APP ===================== */
+
     #app {
       display: flex;
       flex-direction: column;
@@ -241,7 +309,17 @@
   </style>
 </head>
 <body>
-<div id="app">
+
+<!-- OFF SCREEN -->
+<div id="off-screen" class="visible">
+  <div id="off-logo">REAL<span class="lower">ai</span></div>
+  <div id="off-product">Claude Pro</div>
+  <div id="off-sub">HUD</div>
+  <div id="off-footer">Powered By REALai Tech</div>
+</div>
+
+<!-- CHAT APP -->
+<div id="app" style="display:none;">
 
   <div id="header">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -276,17 +354,35 @@
   const RELAY = window.location.origin;
   let avatarUuid = null;
   let userMessageShown = false;
+  let chatWasActive = false;
 
+  const offScreen  = document.getElementById('off-screen');
+  const appEl      = document.getElementById('app');
   const messagesEl = document.getElementById('messages');
   const emptyEl    = document.getElementById('empty');
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
 
-  // Read UUID from URL query string first.
-  // Pro HUD passes avatar_uuid, Light HUD passes object_uuid.
-  // Falls back to /latest only if no UUID in URL (e.g. browser direct load).
   const urlParams = new URLSearchParams(window.location.search);
   const urlUuid = urlParams.get('uuid');
+
+  function showOffScreen() {
+    offScreen.classList.add('visible');
+    appEl.style.display = 'none';
+  }
+
+  function showChatApp() {
+    offScreen.classList.remove('visible');
+    appEl.style.display = 'flex';
+  }
+
+  function clearMessages() {
+    messagesEl.innerHTML = '';
+    messagesEl.appendChild(emptyEl);
+    messagesEl.appendChild(thinkingEl);
+    emptyEl.style.display = '';
+    hideThinking();
+  }
 
   async function loadHistory(uuid) {
     try {
@@ -338,6 +434,24 @@
           document.body.classList.add('dark');
         } else {
           document.body.classList.remove('dark');
+        }
+      }
+
+      // Handle chat ON/OFF state
+      if (typeof data.chat_active !== 'undefined') {
+        if (data.chat_active) {
+          // Just switched ON — clear messages and show fresh chat app
+          if (!chatWasActive) {
+            clearMessages();
+            showChatApp();
+            statusDot.className = 'active';
+          }
+          chatWasActive = true;
+        } else {
+          // Chat is OFF — show off screen
+          chatWasActive = false;
+          showOffScreen();
+          return;
         }
       }
 
@@ -404,15 +518,10 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ avatar_uuid: avatarUuid })
     });
-    messagesEl.innerHTML = '';
-    messagesEl.appendChild(emptyEl);
-    messagesEl.appendChild(thinkingEl);
-    emptyEl.style.display = '';
-    hideThinking();
+    clearMessages();
     statusDot.className = 'active';
   }
 
-  // Start: use URL uuid if present, otherwise fall back to /latest
   async function init() {
     if (urlUuid) {
       avatarUuid = urlUuid;

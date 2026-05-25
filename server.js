@@ -27,6 +27,7 @@ const KEY_GROQ        = (uuid) => `groq:${uuid}:groq`;
 const KEY_SYSPROMPT   = (uuid) => `sysprompt:${uuid}`;
 const KEY_HISTORY     = (uuid) => `history:${uuid}`;
 const KEY_DARKMODE    = (uuid) => `darkmode:${uuid}`;
+const KEY_CHATMODE    = (uuid) => `chatmode:${uuid}`;
 const KEY_LATEST      = "latest_uuid";
 
 // TTL: 7 days for session data
@@ -729,16 +730,17 @@ app.get("/poll", async (req, res) => {
   if (!uuid) return res.json({});
 
   const dark = await redis.get(KEY_DARKMODE(uuid));
+  const chat = await redis.get(KEY_CHATMODE(uuid));
 
   if (pending[uuid]) {
     const data = pending[uuid];
     if (data.reply) {
       delete pending[uuid];
     }
-    return res.json({ ...data, dark: dark === "1" });
+    return res.json({ ...data, dark: dark === "1", chat_active: chat === "1" });
   }
 
-  res.json({ dark: dark === "1" });
+  res.json({ dark: dark === "1", chat_active: chat === "1" });
 });
 
 // ============================================================
@@ -773,6 +775,21 @@ app.post("/darkmode", async (req, res) => {
 });
 
 // ============================================================
+// CHAT MODE — store ON/OFF state per avatar
+// HUD Pro posts 1 (ON) or 0 (OFF) when chat is toggled.
+// Webpage reads this on every poll to show OFF screen or chat UI.
+// ============================================================
+
+app.post("/chatmode", async (req, res) => {
+  const { avatar_uuid, active } = req.body;
+
+  if (!avatar_uuid) return res.json({ ok: false });
+
+  await redis.setEx(KEY_CHATMODE(avatar_uuid), SESSION_TTL, active ? "1" : "0");
+  res.json({ ok: true });
+});
+
+// ============================================================
 // CLEAR
 // Deletes all three suffixed Pro session keys so Clear History
 // works fully regardless of which endpoint was last used.
@@ -797,6 +814,7 @@ app.post("/clear", async (req, res) => {
       await redis.del(KEY_GROQ(avatar_uuid));
       await redis.del(KEY_SYSPROMPT(avatar_uuid));
       await redis.del(KEY_HISTORY(avatar_uuid));
+      await redis.del(KEY_CHATMODE(avatar_uuid));
     } catch (e) {
       console.error("Redis clear error:", e);
     }
