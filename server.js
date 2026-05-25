@@ -38,6 +38,7 @@ const HISTORY_MAX = 20;
 // --- IN-MEMORY (non-persistent, lightweight) ---
 const pending = {};
 const pendingHandoffs = {};
+const pastebinKeys = {};
 
 // --- ENGINE LIGHT LINE: object tracking per owner ---
 const engineRegistry = {};
@@ -128,10 +129,15 @@ async function getDisplayHistory(uuid) {
 // ============================================================
 
 app.post("/chat", async (req, res) => {
-  const { avatar_uuid, avatar_name, message, api_key } = req.body;
+  const { avatar_uuid, avatar_name, message, api_key, pastebin_key } = req.body;
 
   if (!avatar_uuid || !message || !api_key) {
     return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Store Pastebin key in memory if provided — used by /pastebin and handoff export
+  if (pastebin_key) {
+    pastebinKeys[avatar_uuid] = pastebin_key;
   }
 
   pending[avatar_uuid] = {
@@ -790,6 +796,57 @@ app.post("/chatmode", async (req, res) => {
 });
 
 // ============================================================
+// PASTEBIN — export chat history to user's Pastebin account
+// Uses Pastebin key stored in memory from first /chat call.
+// Fetches display history from Redis, posts to Pastebin API,
+// returns the paste URL to the webpage.
+// ============================================================
+
+app.post("/pastebin", async (req, res) => {
+  const { avatar_uuid } = req.body;
+
+  if (!avatar_uuid) return res.status(400).json({ error: "Missing avatar_uuid" });
+
+  const pbKey = pastebinKeys[avatar_uuid];
+  if (!pbKey) return res.status(400).json({ error: "No Pastebin key on file. Send a message first." });
+
+  const history = await getDisplayHistory(avatar_uuid);
+  if (!history || history.length === 0) return res.status(400).json({ error: "No history to export." });
+
+  let content = "REALai HUD — Chat Export\n";
+  content += "========================\n\n";
+  history.forEach(msg => {
+    const label = msg.role === "user" ? "You" : "REALai";
+    content += label + ":\n" + msg.text + "\n\n";
+  });
+
+  try {
+    const params = new URLSearchParams();
+    params.append("api_dev_key", pbKey);
+    params.append("api_option", "paste");
+    params.append("api_paste_code", content);
+    params.append("api_paste_name", "REALai HUD Chat Export");
+
+    const pbRes = await axios.post("https://pastebin.com/api/api_post.php", params, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+    });
+
+    // Pastebin returns the URL as plain text on success
+    const url = pbRes.data;
+    if (url.startsWith("https://")) {
+      return res.json({ url });
+    } else {
+      console.error("Pastebin error:", url);
+      return res.status(500).json({ error: "Pastebin rejected the request: " + url });
+    }
+
+  } catch (err) {
+    console.error("Pastebin post error:", err.message);
+    return res.status(500).json({ error: "Failed to reach Pastebin." });
+  }
+});
+
+// ============================================================
 // CLEAR
 // Deletes all three suffixed Pro session keys so Clear History
 // works fully regardless of which endpoint was last used.
@@ -804,10 +861,12 @@ app.post("/clear", async (req, res) => {
     Object.keys(pending).forEach(k => delete pending[k]);
     Object.keys(pendingHandoffs).forEach(k => delete pendingHandoffs[k]);
     Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
+    Object.keys(pastebinKeys).forEach(k => delete pastebinKeys[k]);
   } else {
     delete pending[avatar_uuid];
     delete pendingHandoffs[avatar_uuid];
     delete engineRegistry[avatar_uuid];
+    delete pastebinKeys[avatar_uuid];
     try {
       await redis.del(KEY_SESSION(avatar_uuid));
       await redis.del(KEY_GEMINI(avatar_uuid));
