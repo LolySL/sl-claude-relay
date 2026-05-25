@@ -28,6 +28,7 @@ const KEY_SYSPROMPT   = (uuid) => `sysprompt:${uuid}`;
 const KEY_HISTORY     = (uuid) => `history:${uuid}`;
 const KEY_DARKMODE    = (uuid) => `darkmode:${uuid}`;
 const KEY_CHATMODE    = (uuid) => `chatmode:${uuid}`;
+const KEY_HANDOFF     = (uuid) => `handoff:${uuid}`;
 const KEY_LATEST      = "latest_uuid";
 
 // TTL: 7 days for session data
@@ -37,8 +38,7 @@ const HISTORY_MAX = 20;
 
 // --- IN-MEMORY (non-persistent, lightweight) ---
 const pending = {};
-const pendingHandoffs = {};
-const pastebinKeys = {};
+const githubKeys = {};
 
 // --- ENGINE LIGHT LINE: object tracking per owner ---
 const engineRegistry = {};
@@ -123,21 +123,53 @@ async function getDisplayHistory(uuid) {
 }
 
 // ============================================================
+// GITHUB GIST HELPER
+// Creates a gist and returns the URL.
+// title: the filename shown in the gist (e.g. "REALai Export.md")
+// content: the text content
+// github_key: the user's GitHub Personal Access Token
+// ============================================================
+
+async function createGist(title, content, github_key) {
+  const files = {};
+  files[title] = { content };
+
+  const response = await axios.post(
+    "https://api.github.com/gists",
+    {
+      description: title,
+      public: false,
+      files
+    },
+    {
+      headers: {
+        "Authorization": `Bearer ${github_key}`,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json"
+      }
+    }
+  );
+
+  return response.data.html_url;
+}
+
+// ============================================================
 // STANDARD LINE — Claude /chat
 // HUD Pro only. Stateful. Redis session history.
 // Session key: session:UUID:claude — isolated from Gemini and Groq.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
-  const { avatar_uuid, avatar_name, message, api_key, pastebin_key } = req.body;
+  const { avatar_uuid, avatar_name, message, api_key, github_key } = req.body;
 
   if (!avatar_uuid || !message || !api_key) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Store Pastebin key in memory if provided — used by /pastebin and handoff export
-  if (pastebin_key) {
-    pastebinKeys[avatar_uuid] = pastebin_key;
+  // Store GitHub key in memory if provided — used by /gist endpoint
+  if (github_key) {
+    githubKeys[avatar_uuid] = github_key;
   }
 
   pending[avatar_uuid] = {
@@ -181,10 +213,12 @@ app.post("/chat", async (req, res) => {
 
     let reply = response.data.content[0].text;
 
+    // Check for handoff block — store content in Redis, show neutral reply
     const handoffMatch = reply.match(/\[HANDOFF\]([\s\S]*?)\[\/HANDOFF\]/);
     if (handoffMatch) {
-      pendingHandoffs[avatar_uuid] = handoffMatch[1].trim();
-      reply = "Working... ready.";
+      const handoffContent = handoffMatch[1].trim();
+      await redis.setEx(KEY_HANDOFF(avatar_uuid), SESSION_TTL, handoffContent);
+      reply = "Handoff ready. Click the button to save to GitHub.";
     }
 
     messages.push({ role: "assistant", content: reply });
@@ -712,15 +746,18 @@ app.post("/sethandoff", (req, res) => {
   });
 });
 
-app.get("/gethandoff", (req, res) => {
+app.get("/gethandoff", async (req, res) => {
   const uuid = req.query.uuid;
 
   if (!uuid) return res.json({});
 
-  if (pendingHandoffs[uuid]) {
-    const content = pendingHandoffs[uuid];
-    delete pendingHandoffs[uuid];
-    return res.json({ content });
+  try {
+    const content = await redis.get(KEY_HANDOFF(uuid));
+    if (content) {
+      return res.json({ content });
+    }
+  } catch (e) {
+    console.error("Redis gethandoff error:", e);
   }
 
   res.json({});
@@ -738,15 +775,22 @@ app.get("/poll", async (req, res) => {
   const dark = await redis.get(KEY_DARKMODE(uuid));
   const chat = await redis.get(KEY_CHATMODE(uuid));
 
+  // Check if a handoff is waiting in Redis
+  let handoff_ready = false;
+  try {
+    const handoffContent = await redis.get(KEY_HANDOFF(uuid));
+    handoff_ready = !!handoffContent;
+  } catch (e) {}
+
   if (pending[uuid]) {
     const data = pending[uuid];
     if (data.reply) {
       delete pending[uuid];
     }
-    return res.json({ ...data, dark: dark === "1", chat_active: chat === "1" });
+    return res.json({ ...data, dark: dark === "1", chat_active: chat === "1", handoff_ready });
   }
 
-  res.json({ dark: dark === "1", chat_active: chat === "1" });
+  res.json({ dark: dark === "1", chat_active: chat === "1", handoff_ready });
 });
 
 // ============================================================
@@ -796,54 +840,50 @@ app.post("/chatmode", async (req, res) => {
 });
 
 // ============================================================
-// PASTEBIN — export chat history to user's Pastebin account
-// Uses Pastebin key stored in memory from first /chat call.
-// Fetches display history from Redis, posts to Pastebin API,
-// returns the paste URL to the webpage.
+// GIST — Export chat history or handoff to GitHub Gist
+// Uses GitHub key stored in memory from first /chat call.
+// type: "export" (chat history) or "handoff" (pending handoff from Redis)
+// On success: returns { url } — the gist URL to open in browser.
+// On handoff: deletes the handoff from Redis after posting.
 // ============================================================
 
-app.post("/pastebin", async (req, res) => {
-  const { avatar_uuid } = req.body;
+app.post("/gist", async (req, res) => {
+  const { avatar_uuid, type } = req.body;
 
   if (!avatar_uuid) return res.status(400).json({ error: "Missing avatar_uuid" });
 
-  const pbKey = pastebinKeys[avatar_uuid];
-  if (!pbKey) return res.status(400).json({ error: "No Pastebin key on file. Send a message first." });
-
-  const history = await getDisplayHistory(avatar_uuid);
-  if (!history || history.length === 0) return res.status(400).json({ error: "No history to export." });
-
-  let content = "REALai HUD — Chat Export\n";
-  content += "========================\n\n";
-  history.forEach(msg => {
-    const label = msg.role === "user" ? "You" : "REALai";
-    content += label + ":\n" + msg.text + "\n\n";
-  });
+  const ghKey = githubKeys[avatar_uuid];
+  if (!ghKey) return res.status(400).json({ error: "No GitHub key on file. Send a message first." });
 
   try {
-    const params = new URLSearchParams();
-    params.append("api_dev_key", pbKey);
-    params.append("api_option", "paste");
-    params.append("api_paste_code", content);
-    params.append("api_paste_name", "REALai HUD Chat Export");
+    if (type === "handoff") {
+      // Handoff — read from Redis, post to Gist, delete from Redis
+      const content = await redis.get(KEY_HANDOFF(avatar_uuid));
+      if (!content) return res.status(400).json({ error: "No handoff waiting." });
 
-    const pbRes = await axios.post("https://pastebin.com/api/api_post.php", params, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" }
-    });
-
-    // Pastebin returns the URL as plain text on success
-    const url = pbRes.data;
-    if (url.startsWith("https://")) {
+      const url = await createGist("REALai Handoff.md", content, ghKey);
+      await redis.del(KEY_HANDOFF(avatar_uuid));
       return res.json({ url });
+
     } else {
-      console.error("Pastebin error:", url);
-      return res.status(500).json({ error: "Pastebin rejected the request: " + url });
+      // Export — read display history from Redis, format as markdown, post to Gist
+      const history = await getDisplayHistory(avatar_uuid);
+      if (!history || history.length === 0) return res.status(400).json({ error: "No history to export." });
+
+      let content = "# REALai HUD - Chat Export\n\n";
+      history.forEach(msg => {
+        const label = msg.role === "user" ? "**You**" : "**REALai**";
+        content += label + "\n\n" + msg.text + "\n\n---\n\n";
+      });
+
+      const url = await createGist("REALai Chat Export.md", content, ghKey);
+      return res.json({ url });
     }
 
   } catch (err) {
-    console.error("Pastebin post error:", err.message);
-    console.error("Pastebin response data:", JSON.stringify(err.response?.data));
-    return res.status(500).json({ error: "Failed to reach Pastebin." });
+    console.error("Gist error:", err.message);
+    console.error("Gist response data:", JSON.stringify(err.response?.data));
+    return res.status(500).json({ error: "Failed to create Gist." });
   }
 });
 
@@ -860,14 +900,12 @@ app.post("/clear", async (req, res) => {
 
   if (avatar_uuid === "all") {
     Object.keys(pending).forEach(k => delete pending[k]);
-    Object.keys(pendingHandoffs).forEach(k => delete pendingHandoffs[k]);
     Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
-    Object.keys(pastebinKeys).forEach(k => delete pastebinKeys[k]);
+    Object.keys(githubKeys).forEach(k => delete githubKeys[k]);
   } else {
     delete pending[avatar_uuid];
-    delete pendingHandoffs[avatar_uuid];
     delete engineRegistry[avatar_uuid];
-    delete pastebinKeys[avatar_uuid];
+    delete githubKeys[avatar_uuid];
     try {
       await redis.del(KEY_SESSION(avatar_uuid));
       await redis.del(KEY_GEMINI(avatar_uuid));
@@ -875,6 +913,7 @@ app.post("/clear", async (req, res) => {
       await redis.del(KEY_SYSPROMPT(avatar_uuid));
       await redis.del(KEY_HISTORY(avatar_uuid));
       await redis.del(KEY_CHATMODE(avatar_uuid));
+      await redis.del(KEY_HANDOFF(avatar_uuid));
     } catch (e) {
       console.error("Redis clear error:", e);
     }

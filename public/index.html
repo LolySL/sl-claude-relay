@@ -42,8 +42,6 @@
       overflow: hidden;
     }
 
-    /* Aspect ratio correction — prim screen is 1:1.556, not 1:2.
-       Content fills full viewport width, height constrained by ratio. */
     #aspect-wrap {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -313,11 +311,11 @@
       color: #ffffff;
     }
 
-    #pastebin-btn {
+    #handoff-btn {
       display: none;
     }
 
-    #pastebin-btn.visible {
+    #handoff-btn.visible {
       display: block;
     }
   </style>
@@ -357,7 +355,7 @@
     <button class="footer-btn" onclick="refreshView()">Refresh</button>
     <button class="footer-btn" onclick="loadHistory()">Load</button>
     <button class="footer-btn" onclick="exportChat()">Export</button>
-    <button class="footer-btn highlight" id="pastebin-btn" onclick="openHandoff()">Open in Pastebin</button>
+    <button class="footer-btn highlight" id="handoff-btn" onclick="saveHandoff()">Save Handoff</button>
   </div>
 
 </div>
@@ -369,7 +367,6 @@
   let avatarUuid = null;
   let userMessageShown = false;
   let chatWasActive = false;
-  let pendingHandoff = null;
 
   const offScreen  = document.getElementById('off-screen');
   const aspectWrap = document.getElementById('aspect-wrap');
@@ -378,7 +375,7 @@
   const emptyEl    = document.getElementById('empty');
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
-  const pastebinBtn = document.getElementById('pastebin-btn');
+  const handoffBtn = document.getElementById('handoff-btn');
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlUuid = urlParams.get('uuid');
@@ -420,7 +417,6 @@
       }
 
       if (data.messages && data.messages.length > 0) {
-        // Clear messages without touching view state
         messagesEl.innerHTML = '';
         messagesEl.appendChild(emptyEl);
         messagesEl.appendChild(thinkingEl);
@@ -435,55 +431,34 @@
   async function exportChat() {
     if (!avatarUuid) return;
     try {
-      const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
-      if (!res.ok) return;
+      const res = await fetch(`${RELAY}/gist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_uuid: avatarUuid, type: 'export' })
+      });
       const data = await res.json();
-      if (!data.messages || data.messages.length === 0) return;
-
-      let content = '';
-      data.messages.forEach(msg => {
-        const role = msg.role === 'user' ? 'You' : 'REALai';
-        content += role + ':\n' + msg.text + '\n\n';
-      });
-
-      const pbRes = await fetch(`${RELAY}/pastebin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_uuid: avatarUuid, content, title: 'REALai HUD Export' })
-      });
-      const pbData = await pbRes.json();
-      if (pbData.url) {
-        window.open(pbData.url, '_blank');
+      if (data.url) {
+        window.open(data.url, '_blank');
+      } else if (data.error) {
+        console.error('Export error:', data.error);
       }
     } catch(e) {}
   }
 
-  async function openHandoff() {
-    if (!pendingHandoff) return;
-    try {
-      const pbRes = await fetch(`${RELAY}/pastebin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: pendingHandoff, title: 'REALai Handoff' })
-      });
-      const pbData = await pbRes.json();
-      if (pbData.url) {
-        window.open(pbData.url, '_blank');
-        pendingHandoff = null;
-        pastebinBtn.classList.remove('visible');
-      }
-    } catch(e) {}
-  }
-
-  async function checkHandoff() {
+  async function saveHandoff() {
     if (!avatarUuid) return;
     try {
-      const res = await fetch(`${RELAY}/gethandoff?uuid=${avatarUuid}`);
-      if (!res.ok) return;
+      const res = await fetch(`${RELAY}/gist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_uuid: avatarUuid, type: 'handoff' })
+      });
       const data = await res.json();
-      if (data.content) {
-        pendingHandoff = data.content;
-        pastebinBtn.classList.add('visible');
+      if (data.url) {
+        window.open(data.url, '_blank');
+        handoffBtn.classList.remove('visible');
+      } else if (data.error) {
+        console.error('Handoff error:', data.error);
       }
     } catch(e) {}
   }
@@ -534,6 +509,11 @@
         }
       }
 
+      // Show or hide handoff button based on whether a handoff is waiting in Redis
+      if (data.handoff_ready) {
+        handoffBtn.classList.add('visible');
+      }
+
       // Handle chat ON/OFF state
       if (typeof data.chat_active !== 'undefined') {
         if (data.chat_active) {
@@ -544,13 +524,11 @@
           }
           chatWasActive = true;
         } else {
-          // Only switch to OFF if we were previously ON in this session
           if (chatWasActive) {
             chatWasActive = false;
             showOffScreen();
             return;
           }
-          // If chat was never active, stay on whatever view is current
           chatWasActive = false;
         }
       }
@@ -574,7 +552,6 @@
         hideThinking();
         addMessage('assistant', data.reply, slTime);
         statusDot.className = 'active';
-        await checkHandoff();
       }
 
     } catch(e) {}
@@ -624,7 +601,6 @@
   }
 
   setInterval(poll, 1500);
-  setInterval(checkHandoff, 5000);
   setInterval(() => fetch(`${RELAY}/ping`), 600000);
   init();
 </script>
