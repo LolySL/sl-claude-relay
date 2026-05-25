@@ -406,28 +406,28 @@
     poll();
   }
 
-  async function exportChat() {
+  async function loadHistory() {
     if (!avatarUuid) return;
     try {
       const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
       if (!res.ok) return;
       const data = await res.json();
-      if (!data.messages || data.messages.length === 0) return;
 
-      let content = '';
-      data.messages.forEach(msg => {
-        const role = msg.role === 'user' ? 'You' : 'REALai';
-        content += role + ':\n' + msg.text + '\n\n';
-      });
+      if (data.dark) {
+        document.body.classList.add('dark');
+      } else {
+        document.body.classList.remove('dark');
+      }
 
-      const pbRes = await fetch(`${RELAY}/pastebin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, title: 'REALai HUD Export' })
-      });
-      const pbData = await pbRes.json();
-      if (pbData.url) {
-        window.open(pbData.url, '_blank');
+      if (data.messages && data.messages.length > 0) {
+        // Clear messages without touching view state
+        messagesEl.innerHTML = '';
+        messagesEl.appendChild(emptyEl);
+        messagesEl.appendChild(thinkingEl);
+        emptyEl.style.display = 'none';
+        data.messages.forEach(msg => {
+          addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.text, '', true);
+        });
       }
     } catch(e) {}
   }
