@@ -19,9 +19,11 @@ redis.on("error", (err) => console.error("Redis error:", err));
 redis.connect().then(() => console.log("Redis connected."));
 
 // --- REDIS KEY HELPERS ---
-const KEY_SESSION     = (uuid) => `session:${uuid}`;
-const KEY_GEMINI      = (uuid) => `gemini:${uuid}`;
-const KEY_GROQ        = (uuid) => `groq:${uuid}`;
+// Each Pro endpoint uses a product-specific suffix so sessions never bleed
+// between Claude, Gemini, and Groq Pro conversations.
+const KEY_SESSION     = (uuid) => `session:${uuid}:claude`;
+const KEY_GEMINI      = (uuid) => `gemini:${uuid}:gemini`;
+const KEY_GROQ        = (uuid) => `groq:${uuid}:groq`;
 const KEY_SYSPROMPT   = (uuid) => `sysprompt:${uuid}`;
 const KEY_HISTORY     = (uuid) => `history:${uuid}`;
 const KEY_DARKMODE    = (uuid) => `darkmode:${uuid}`;
@@ -121,6 +123,7 @@ async function getDisplayHistory(uuid) {
 // ============================================================
 // STANDARD LINE — Claude /chat
 // HUD Pro only. Stateful. Redis session history.
+// Session key: session:UUID:claude — isolated from Gemini and Groq.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
@@ -210,6 +213,7 @@ app.post("/chat", async (req, res) => {
 // ============================================================
 // STANDARD LINE — Gemini /gemini-chat
 // HUD Pro only. Stateful. Redis session history.
+// Session key: gemini:UUID:gemini — isolated from Claude and Groq.
 // ============================================================
 
 app.post("/gemini-chat", async (req, res) => {
@@ -280,6 +284,7 @@ app.post("/gemini-chat", async (req, res) => {
 // ============================================================
 // STANDARD LINE — Groq /groq-chat
 // HUD Pro only. Stateful. Redis session history.
+// Session key: groq:UUID:groq — isolated from Claude and Gemini.
 // ============================================================
 
 app.post("/groq-chat", async (req, res) => {
@@ -571,6 +576,7 @@ app.post("/gemini-chat-light", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — The Engine — /groq-chat-engine
+// Stateless. No Redis. Object limit enforced in-memory.
 // ============================================================
 
 app.post("/groq-chat-engine", async (req, res) => {
@@ -768,6 +774,8 @@ app.post("/darkmode", async (req, res) => {
 
 // ============================================================
 // CLEAR
+// Deletes all three suffixed Pro session keys so Clear History
+// works fully regardless of which endpoint was last used.
 // ============================================================
 
 app.post("/clear", async (req, res) => {
