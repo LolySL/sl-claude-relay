@@ -428,39 +428,19 @@
     } catch(e) {}
   }
 
-  async function exportChat() {
+  // Export — GET request so SL's media browser can fire it.
+  // Opens the gist URL directly in a new tab.
+  function exportChat() {
     if (!avatarUuid) return;
-    try {
-      const res = await fetch(`${RELAY}/gist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_uuid: avatarUuid, type: 'export' })
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.open(data.url, '_blank');
-      } else if (data.error) {
-        console.error('Export error:', data.error);
-      }
-    } catch(e) {}
+    window.open(`${RELAY}/gist?uuid=${avatarUuid}&type=export`, '_blank');
   }
 
-  async function saveHandoff() {
+  // Save Handoff — GET request so SL's media browser can fire it.
+  // Opens the gist URL directly in a new tab.
+  function saveHandoff() {
     if (!avatarUuid) return;
-    try {
-      const res = await fetch(`${RELAY}/gist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_uuid: avatarUuid, type: 'handoff' })
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.open(data.url, '_blank');
-        handoffBtn.classList.remove('visible');
-      } else if (data.error) {
-        console.error('Handoff error:', data.error);
-      }
-    } catch(e) {}
+    window.open(`${RELAY}/gist?uuid=${avatarUuid}&type=handoff`, '_blank');
+    handoffBtn.classList.remove('visible');
   }
 
   async function initHistory(uuid) {
@@ -509,12 +489,10 @@
         }
       }
 
-      // Show or hide handoff button based on whether a handoff is waiting in Redis
       if (data.handoff_ready) {
         handoffBtn.classList.add('visible');
       }
 
-      // Handle chat ON/OFF state
       if (typeof data.chat_active !== 'undefined') {
         if (data.chat_active) {
           if (!chatWasActive) {

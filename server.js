@@ -19,8 +19,6 @@ redis.on("error", (err) => console.error("Redis error:", err));
 redis.connect().then(() => console.log("Redis connected."));
 
 // --- REDIS KEY HELPERS ---
-// Each Pro endpoint uses a product-specific suffix so sessions never bleed
-// between Claude, Gemini, and Groq Pro conversations.
 const KEY_SESSION     = (uuid) => `session:${uuid}:claude`;
 const KEY_GEMINI      = (uuid) => `gemini:${uuid}:gemini`;
 const KEY_GROQ        = (uuid) => `groq:${uuid}:groq`;
@@ -29,6 +27,8 @@ const KEY_HISTORY     = (uuid) => `history:${uuid}`;
 const KEY_DARKMODE    = (uuid) => `darkmode:${uuid}`;
 const KEY_CHATMODE    = (uuid) => `chatmode:${uuid}`;
 const KEY_HANDOFF     = (uuid) => `handoff:${uuid}`;
+const KEY_GITHUB      = (uuid) => `github:${uuid}`;
+const KEY_AVATARNAME  = (uuid) => `avatarname:${uuid}`;
 const KEY_LATEST      = "latest_uuid";
 
 // TTL: 7 days for session data
@@ -38,7 +38,6 @@ const HISTORY_MAX = 20;
 
 // --- IN-MEMORY (non-persistent, lightweight) ---
 const pending = {};
-const githubKeys = {};
 
 // --- ENGINE LIGHT LINE: object tracking per owner ---
 const engineRegistry = {};
@@ -124,10 +123,6 @@ async function getDisplayHistory(uuid) {
 
 // ============================================================
 // GITHUB GIST HELPER
-// Creates a gist and returns the URL.
-// title: the filename shown in the gist (e.g. "REALai Export.md")
-// content: the text content
-// github_key: the user's GitHub Personal Access Token
 // ============================================================
 
 async function createGist(title, content, github_key) {
@@ -155,21 +150,48 @@ async function createGist(title, content, github_key) {
 }
 
 // ============================================================
+// INIT — HUD Pro session initialisation
+// Called once on HUD startup (attach, rez, reset).
+// Stores github_key, avatar_name, and system_prompt in Redis.
+// api_key is NOT stored here — travels with each /chat call only.
+// ============================================================
+
+app.post("/init", async (req, res) => {
+  const { avatar_uuid, avatar_name, github_key, system_prompt } = req.body;
+
+  if (!avatar_uuid) {
+    return res.status(400).json({ error: "Missing avatar_uuid" });
+  }
+
+  try {
+    if (github_key) {
+      await redis.setEx(KEY_GITHUB(avatar_uuid), SESSION_TTL, github_key);
+    }
+    if (avatar_name) {
+      await redis.setEx(KEY_AVATARNAME(avatar_uuid), SESSION_TTL, avatar_name);
+    }
+    if (system_prompt) {
+      await saveSystemPrompt(avatar_uuid, system_prompt);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Init error:", e);
+    res.status(500).json({ error: "Init failed." });
+  }
+});
+
+// ============================================================
 // STANDARD LINE — Claude /chat
 // HUD Pro only. Stateful. Redis session history.
-// Session key: session:UUID:claude — isolated from Gemini and Groq.
+// github_key and system_prompt now read from Redis — not expected in body.
+// api_key still travels with each call — never stored.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
-  const { avatar_uuid, avatar_name, message, api_key, github_key } = req.body;
+  const { avatar_uuid, message, api_key } = req.body;
 
   if (!avatar_uuid || !message || !api_key) {
     return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  // Store GitHub key in memory if provided — used by /gist endpoint
-  if (github_key) {
-    githubKeys[avatar_uuid] = github_key;
   }
 
   pending[avatar_uuid] = {
@@ -186,12 +208,13 @@ app.post("/chat", async (req, res) => {
 
   await redis.set(KEY_LATEST, avatar_uuid);
 
+  // Read system prompt from Redis (set by /init)
   const storedPrompt = await getSystemPrompt(avatar_uuid);
-  const systemPrompt = req.body.system_prompt
-    ? req.body.system_prompt
-    : storedPrompt
+  const avatar_name = await redis.get(KEY_AVATARNAME(avatar_uuid)) || "Unknown";
+
+  const systemPrompt = storedPrompt
     ? storedPrompt
-    : `You are a helpful AI assistant accessible from inside Second Life. The user's avatar name is ${avatar_name}. Keep responses concise, under 200 words, as they display on a small HUD screen. Time in the context feed is SL time, which is US Pacific time (UTC-7 in summer, UTC-8 in winter).`;
+    : `You are a personal AI assistant running inside Second Life via the REALai HUD. The user's avatar name is ${avatar_name}. Never use markdown, bullet points, asterisks, or newlines. Plain text only, single paragraph. Keep responses concise - this displays on a small HUD screen.`;
 
   try {
     const response = await axios.post(
@@ -213,7 +236,7 @@ app.post("/chat", async (req, res) => {
 
     let reply = response.data.content[0].text;
 
-    // Check for handoff block — store content in Redis, show neutral reply
+    // Check for handoff block
     const handoffMatch = reply.match(/\[HANDOFF\]([\s\S]*?)\[\/HANDOFF\]/);
     if (handoffMatch) {
       const handoffContent = handoffMatch[1].trim();
@@ -254,11 +277,10 @@ app.post("/chat", async (req, res) => {
 // ============================================================
 // STANDARD LINE — Gemini /gemini-chat
 // HUD Pro only. Stateful. Redis session history.
-// Session key: gemini:UUID:gemini — isolated from Claude and Groq.
 // ============================================================
 
 app.post("/gemini-chat", async (req, res) => {
-  const { avatar_uuid, avatar_name, message, gemini_key, system_prompt } = req.body;
+  const { avatar_uuid, message, gemini_key, system_prompt } = req.body;
 
   if (!avatar_uuid || !message || !gemini_key) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -277,6 +299,8 @@ app.post("/gemini-chat", async (req, res) => {
   await saveSession(sessionKey, messages);
 
   const storedPrompt = await getSystemPrompt(avatar_uuid);
+  const avatar_name = await redis.get(KEY_AVATARNAME(avatar_uuid)) || "Unknown";
+
   const systemInstruction = system_prompt
     ? system_prompt
     : storedPrompt
@@ -325,11 +349,10 @@ app.post("/gemini-chat", async (req, res) => {
 // ============================================================
 // STANDARD LINE — Groq /groq-chat
 // HUD Pro only. Stateful. Redis session history.
-// Session key: groq:UUID:groq — isolated from Claude and Gemini.
 // ============================================================
 
 app.post("/groq-chat", async (req, res) => {
-  const { avatar_uuid, avatar_name, message, groq_key, system_prompt } = req.body;
+  const { avatar_uuid, message, groq_key, system_prompt } = req.body;
 
   if (!avatar_uuid || !message || !groq_key) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -348,6 +371,8 @@ app.post("/groq-chat", async (req, res) => {
   await saveSession(sessionKey, messages);
 
   const storedPrompt = await getSystemPrompt(avatar_uuid);
+  const avatar_name = await redis.get(KEY_AVATARNAME(avatar_uuid)) || "Unknown";
+
   const systemInstruction = system_prompt
     ? system_prompt
     : storedPrompt
@@ -403,9 +428,6 @@ app.post("/groq-chat", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — Groq /groq-chat-light
-// Marvin, Mirror, HUD Light (groq). Stateless. No Redis.
-// Uses object_uuid for pending — no avatar_uuid needed.
-// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/groq-chat-light", async (req, res) => {
@@ -476,9 +498,6 @@ app.post("/groq-chat-light", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — Claude /claude-chat-light
-// HUD Light (claude). Stateless. No Redis.
-// Uses object_uuid for pending — no avatar_uuid needed.
-// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/claude-chat-light", async (req, res) => {
@@ -550,9 +569,6 @@ app.post("/claude-chat-light", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — Gemini /gemini-chat-light
-// HUD Light (gemini). Stateless. No Redis.
-// Uses object_uuid for pending — no avatar_uuid needed.
-// Summary calls (sum_ prefix) skip pending entirely.
 // ============================================================
 
 app.post("/gemini-chat-light", async (req, res) => {
@@ -617,7 +633,6 @@ app.post("/gemini-chat-light", async (req, res) => {
 
 // ============================================================
 // LIGHT LINE — The Engine — /groq-chat-engine
-// Stateless. No Redis. Object limit enforced in-memory.
 // ============================================================
 
 app.post("/groq-chat-engine", async (req, res) => {
@@ -707,7 +722,6 @@ app.post("/engine-ping", (req, res) => {
 
 // ============================================================
 // HANDOFF — all files served from relay filesystem
-// Protected by owner UUID
 // ============================================================
 
 app.post("/sethandoff", (req, res) => {
@@ -775,7 +789,6 @@ app.get("/poll", async (req, res) => {
   const dark = await redis.get(KEY_DARKMODE(uuid));
   const chat = await redis.get(KEY_CHATMODE(uuid));
 
-  // Check if a handoff is waiting in Redis
   let handoff_ready = false;
   try {
     const handoffContent = await redis.get(KEY_HANDOFF(uuid));
@@ -794,7 +807,7 @@ app.get("/poll", async (req, res) => {
 });
 
 // ============================================================
-// HISTORY — returns last N display messages for webpage reload
+// HISTORY
 // ============================================================
 
 app.get("/history", async (req, res) => {
@@ -812,7 +825,7 @@ app.get("/history", async (req, res) => {
 });
 
 // ============================================================
-// DARK MODE — store preference per avatar
+// DARK MODE
 // ============================================================
 
 app.post("/darkmode", async (req, res) => {
@@ -825,9 +838,7 @@ app.post("/darkmode", async (req, res) => {
 });
 
 // ============================================================
-// CHAT MODE — store ON/OFF state per avatar
-// HUD Pro posts 1 (ON) or 0 (OFF) when chat is toggled.
-// Webpage reads this on every poll to show OFF screen or chat UI.
+// CHAT MODE
 // ============================================================
 
 app.post("/chatmode", async (req, res) => {
@@ -840,34 +851,33 @@ app.post("/chatmode", async (req, res) => {
 });
 
 // ============================================================
-// GIST — Export chat history or handoff to GitHub Gist
-// Uses GitHub key stored in memory from first /chat call.
-// type: "export" (chat history) or "handoff" (pending handoff from Redis)
-// On success: returns { url } — the gist URL to open in browser.
-// On handoff: deletes the handoff from Redis after posting.
+// GIST — Export chat history or save handoff to GitHub Gist
+// Now a GET request so SL's media browser can call it directly.
+// github_key is read from Redis — stored by /init on HUD startup.
+// Usage:
+//   Export:  GET /gist?uuid=AVATAR_UUID&type=export
+//   Handoff: GET /gist?uuid=AVATAR_UUID&type=handoff
 // ============================================================
 
-app.post("/gist", async (req, res) => {
-  const { avatar_uuid, type } = req.body;
+app.get("/gist", async (req, res) => {
+  const { uuid, type } = req.query;
 
-  if (!avatar_uuid) return res.status(400).json({ error: "Missing avatar_uuid" });
+  if (!uuid) return res.status(400).json({ error: "Missing uuid" });
 
-  const ghKey = githubKeys[avatar_uuid];
-  if (!ghKey) return res.status(400).json({ error: "No GitHub key on file. Send a message first." });
+  const ghKey = await redis.get(KEY_GITHUB(uuid));
+  if (!ghKey) return res.status(400).json({ error: "No GitHub key on file. Please reset your HUD." });
 
   try {
     if (type === "handoff") {
-      // Handoff — read from Redis, post to Gist, delete from Redis
-      const content = await redis.get(KEY_HANDOFF(avatar_uuid));
+      const content = await redis.get(KEY_HANDOFF(uuid));
       if (!content) return res.status(400).json({ error: "No handoff waiting." });
 
       const url = await createGist("REALai Handoff.md", content, ghKey);
-      await redis.del(KEY_HANDOFF(avatar_uuid));
+      await redis.del(KEY_HANDOFF(uuid));
       return res.json({ url });
 
     } else {
-      // Export — read display history from Redis, format as markdown, post to Gist
-      const history = await getDisplayHistory(avatar_uuid);
+      const history = await getDisplayHistory(uuid);
       if (!history || history.length === 0) return res.status(400).json({ error: "No history to export." });
 
       let content = "# REALai HUD - Chat Export\n\n";
@@ -889,8 +899,6 @@ app.post("/gist", async (req, res) => {
 
 // ============================================================
 // CLEAR
-// Deletes all three suffixed Pro session keys so Clear History
-// works fully regardless of which endpoint was last used.
 // ============================================================
 
 app.post("/clear", async (req, res) => {
@@ -901,11 +909,9 @@ app.post("/clear", async (req, res) => {
   if (avatar_uuid === "all") {
     Object.keys(pending).forEach(k => delete pending[k]);
     Object.keys(engineRegistry).forEach(k => delete engineRegistry[k]);
-    Object.keys(githubKeys).forEach(k => delete githubKeys[k]);
   } else {
     delete pending[avatar_uuid];
     delete engineRegistry[avatar_uuid];
-    delete githubKeys[avatar_uuid];
     try {
       await redis.del(KEY_SESSION(avatar_uuid));
       await redis.del(KEY_GEMINI(avatar_uuid));
@@ -914,6 +920,8 @@ app.post("/clear", async (req, res) => {
       await redis.del(KEY_HISTORY(avatar_uuid));
       await redis.del(KEY_CHATMODE(avatar_uuid));
       await redis.del(KEY_HANDOFF(avatar_uuid));
+      // Note: we do NOT delete KEY_GITHUB or KEY_AVATARNAME on clear
+      // — those are identity settings, not conversation history.
     } catch (e) {
       console.error("Redis clear error:", e);
     }
