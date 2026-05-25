@@ -42,6 +42,26 @@
       overflow: hidden;
     }
 
+    /* Aspect ratio correction — prim screen is 1:1.556, not 1:2.
+       This constrains content to match the actual visible area. */
+    #aspect-wrap {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+    }
+
+    #aspect-inner {
+      width: 100%;
+      aspect-ratio: 0.40604 / 0.63162;
+      max-height: 100%;
+      max-width: calc(100vh * 0.40604 / 0.63162);
+      overflow: hidden;
+      position: relative;
+    }
+
     /* ===================== OFF SCREEN ===================== */
 
     #off-screen {
@@ -68,7 +88,10 @@
       display: flex;
       flex-direction: column;
       height: 100%;
+      width: 100%;
       max-width: 100%;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
     }
 
     #header {
@@ -81,22 +104,24 @@
       background: var(--surface);
     }
 
-    #header-logo {
-      height: 16px;
-      width: auto;
-      opacity: 0.85;
-    }
-
-    #header-logo path {
-      fill: var(--text);
-    }
-
-    #header-title {
-      font-size: 15px;
-      font-weight: 500;
-      letter-spacing: 0.01em;
-      color: var(--text);
+    #live-chat {
       flex: 1;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1;
+    }
+
+    #live-chat .live {
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    #live-chat .chat {
+      color: var(--text);
+      text-transform: uppercase;
+      opacity: 0.6;
     }
 
     #status-dot {
@@ -302,12 +327,12 @@
 </div>
 
 <!-- CHAT APP -->
-<div id="app" style="display:none;">
+<div id="aspect-wrap" style="display:none;">
+<div id="aspect-inner">
+<div id="app">
 
   <div id="header">
-    <svg id="header-logo" viewBox="0 0 1413.562 319.284" xmlns="http://www.w3.org/2000/svg">
-      <path d="M480.206,1132.98H614.295l-59.87-99.37c31.172-20.16,49.48-54.845,49.48-97.97,0-71.25-48.985-116.719-124.194-116.719H316.923V1132.98H431.715v-80.62h10.391Zm-13.36-213.746c14.844,0,22.266,6.094,22.266,18.75,0,12.187-7.422,18.75-22.266,18.75H431.715v-37.5h35.131Zm389.238-1.406V818.921H626.993V1132.98H856.084v-98.9h-114.3v-15.94H835.8V932.828H741.786v-15h114.3ZM1061.99,1132.98h126.17L1109,818.921H946.209L867.536,1132.98H989.751l5.443-33.75h61.356Zm-51.46-131.25,11.38-73.59h6.93l11.87,73.59h-30.18Zm305.36,30.94V818.921H1201.1V1132.98h219.19V1032.67h-104.4Zm324.29-26.69q0-90.681-98.02-90.684-21.045,0-46.66,5.395-25.635,5.4-40.4,12.452v49.389q36.93-22.615,77.88-22.619,40.74,0,40.73,34.863l-62.21,7.674q-79.005,9.555-79,71.39,0,29.265,19.13,46.8t52.48,17.53q45.21,0,68.26-35.69h0.9v30.5h66.91v-127Zm-79,72.95q-12.54,12.75-32.45,12.76-14.325,0-22.71-7.16a23.046,23.046,0,0,1-8.4-18.37q0-24.69,34.47-28.84l41.62-4.98v14.32Q1573.71,1066.16,1561.18,1078.93ZM1719.2,877.32a30.617,30.617,0,0,0,11.3-24.487,29.815,29.815,0,0,0-11.3-24.073q-11.31-9.338-29.43-9.338-17.91,0-29.32,9.338a29.684,29.684,0,0,0-11.41,24.073q0,14.318,11.41,24.176t29.32,9.857Q1707.9,886.866,1719.2,877.32Zm5.48,43.164h-70.72v212.5h70.72v-212.5Z" transform="translate(-316.938 -818.906)"/>
-    </svg>
+    <div id="live-chat"><span class="live">Live</span> <span class="chat">Chat</span></div>
     <div id="status-dot"></div>
   </div>
 
@@ -333,6 +358,8 @@
   </div>
 
 </div>
+</div>
+</div>
 
 <script>
   const RELAY = window.location.origin;
@@ -342,6 +369,7 @@
   let pendingHandoff = null;
 
   const offScreen  = document.getElementById('off-screen');
+  const aspectWrap = document.getElementById('aspect-wrap');
   const appEl      = document.getElementById('app');
   const messagesEl = document.getElementById('messages');
   const emptyEl    = document.getElementById('empty');
@@ -354,12 +382,12 @@
 
   function showOffScreen() {
     offScreen.classList.add('visible');
-    appEl.style.display = 'none';
+    aspectWrap.style.display = 'none';
   }
 
   function showChatApp() {
     offScreen.classList.remove('visible');
-    appEl.style.display = 'flex';
+    aspectWrap.style.display = 'flex';
   }
 
   function clearMessages() {
