@@ -49,63 +49,17 @@
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
       background: #222325;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding-top: 28%;
     }
 
     #off-screen.visible {
-      display: flex;
+      display: block;
     }
 
-    #off-logo {
-      font-family: 'Arial Black', 'Segoe UI Black', sans-serif;
-      font-weight: 900;
-      font-size: 64px;
-      letter-spacing: -1px;
-      color: #ffffff;
-      text-transform: uppercase;
-      line-height: 1;
-      margin-bottom: 52px;
-    }
-
-    #off-logo span.lower {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-weight: 900;
-      font-size: 64px;
-      text-transform: lowercase;
-    }
-
-    #off-product {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-weight: 400;
-      font-size: 36px;
-      color: #ffffff;
-      letter-spacing: 0.01em;
-      margin-bottom: 8px;
-    }
-
-    #off-sub {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-weight: 400;
-      font-size: 22px;
-      color: #888888;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    #off-footer {
-      position: fixed;
-      bottom: 32px;
-      left: 0; right: 0;
-      text-align: center;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-weight: 400;
-      font-size: 16px;
-      color: #ffffff;
-      opacity: 0.75;
-      letter-spacing: 0.02em;
+    #off-screen img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
     /* ===================== CHAT APP ===================== */
@@ -312,10 +266,7 @@
 
 <!-- OFF SCREEN -->
 <div id="off-screen" class="visible">
-  <div id="off-logo">REAL<span class="lower">ai</span></div>
-  <div id="off-product">Claude Pro</div>
-  <div id="off-sub">HUD</div>
-  <div id="off-footer">Powered By REALai Tech</div>
+  <img src="/REALai_HUD_OFF.png" alt="" />
 </div>
 
 <!-- CHAT APP -->
