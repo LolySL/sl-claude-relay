@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Claude</title>
+  <title>REALai</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -76,15 +76,19 @@
       align-items: center;
       padding: 10px 14px;
       border-bottom: 1px solid var(--border);
-      gap: 8px;
+      gap: 10px;
       flex-shrink: 0;
       background: var(--surface);
     }
 
-    #header svg {
-      width: 18px;
-      height: 18px;
+    #header-logo {
+      height: 16px;
+      width: auto;
       opacity: 0.85;
+    }
+
+    #header-logo path {
+      fill: var(--text);
     }
 
     #header-title {
@@ -101,6 +105,7 @@
       border-radius: 50%;
       background: #c0bdb9;
       transition: background 0.4s;
+      flex-shrink: 0;
     }
 
     #status-dot.active {
@@ -212,13 +217,20 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      opacity: 0.35;
+      gap: 12px;
+      opacity: 0.3;
       pointer-events: none;
       padding-bottom: 40px;
     }
 
-    #empty svg { width: 32px; height: 32px; }
+    #empty-logo {
+      height: 28px;
+      width: auto;
+    }
+
+    #empty-logo path {
+      fill: var(--text);
+    }
 
     #empty p {
       font-size: 13px;
@@ -228,37 +240,57 @@
       max-width: 160px;
     }
 
+    /* ===================== FOOTER ===================== */
+
     #footer {
-      padding: 8px 14px 10px;
+      padding: 10px 14px 12px;
       border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 8px;
       flex-shrink: 0;
       background: var(--surface);
     }
 
-    #footer-hint {
-      font-size: 11px;
+    .footer-btn {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'Segoe UI', system-ui, sans-serif;
       color: var(--text-dim);
-      opacity: 0.6;
-    }
-
-    #clear-btn {
-      font-size: 11px;
-      color: var(--text-dim);
-      background: none;
-      border: none;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 14px;
       cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-      transition: color 0.2s, background 0.2s;
-      font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
+      transition: color 0.2s, background 0.2s, border-color 0.2s;
+      white-space: nowrap;
+      flex: 1;
+      text-align: center;
     }
 
-    #clear-btn:hover {
+    .footer-btn:hover {
       color: var(--text);
       background: var(--border);
+      border-color: var(--text-dim);
+    }
+
+    .footer-btn.highlight {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--bg);
+    }
+
+    .footer-btn.highlight:hover {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    #pastebin-btn {
+      display: none;
+    }
+
+    #pastebin-btn.visible {
+      display: block;
     }
   </style>
 </head>
@@ -273,19 +305,18 @@
 <div id="app" style="display:none;">
 
   <div id="header">
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M13.827 3.988L19.66 18h-3.16l-1.17-3.016H8.68L7.51 18H4.35L10.183 3.988h3.644zm-1.822 3.95L9.77 12.6h4.47l-2.235-4.663z" fill="#cc785c"/>
+    <svg id="header-logo" viewBox="0 0 1413.562 319.284" xmlns="http://www.w3.org/2000/svg">
+      <path d="M480.206,1132.98H614.295l-59.87-99.37c31.172-20.16,49.48-54.845,49.48-97.97,0-71.25-48.985-116.719-124.194-116.719H316.923V1132.98H431.715v-80.62h10.391Zm-13.36-213.746c14.844,0,22.266,6.094,22.266,18.75,0,12.187-7.422,18.75-22.266,18.75H431.715v-37.5h35.131Zm389.238-1.406V818.921H626.993V1132.98H856.084v-98.9h-114.3v-15.94H835.8V932.828H741.786v-15h114.3ZM1061.99,1132.98h126.17L1109,818.921H946.209L867.536,1132.98H989.751l5.443-33.75h61.356Zm-51.46-131.25,11.38-73.59h6.93l11.87,73.59h-30.18Zm305.36,30.94V818.921H1201.1V1132.98h219.19V1032.67h-104.4Zm324.29-26.69q0-90.681-98.02-90.684-21.045,0-46.66,5.395-25.635,5.4-40.4,12.452v49.389q36.93-22.615,77.88-22.619,40.74,0,40.73,34.863l-62.21,7.674q-79.005,9.555-79,71.39,0,29.265,19.13,46.8t52.48,17.53q45.21,0,68.26-35.69h0.9v30.5h66.91v-127Zm-79,72.95q-12.54,12.75-32.45,12.76-14.325,0-22.71-7.16a23.046,23.046,0,0,1-8.4-18.37q0-24.69,34.47-28.84l41.62-4.98v14.32Q1573.71,1066.16,1561.18,1078.93ZM1719.2,877.32a30.617,30.617,0,0,0,11.3-24.487,29.815,29.815,0,0,0-11.3-24.073q-11.31-9.338-29.43-9.338-17.91,0-29.32,9.338a29.684,29.684,0,0,0-11.41,24.073q0,14.318,11.41,24.176t29.32,9.857Q1707.9,886.866,1719.2,877.32Zm5.48,43.164h-70.72v212.5h70.72v-212.5Z" transform="translate(-316.938 -818.906)"/>
     </svg>
-    <span id="header-title">Claude</span>
     <div id="status-dot"></div>
   </div>
 
   <div id="messages">
     <div id="empty">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M13.827 3.988L19.66 18h-3.16l-1.17-3.016H8.68L7.51 18H4.35L10.183 3.988h3.644zm-1.822 3.95L9.77 12.6h4.47l-2.235-4.663z" fill="currentColor"/>
+      <svg id="empty-logo" viewBox="0 0 1413.562 319.284" xmlns="http://www.w3.org/2000/svg">
+        <path d="M480.206,1132.98H614.295l-59.87-99.37c31.172-20.16,49.48-54.845,49.48-97.97,0-71.25-48.985-116.719-124.194-116.719H316.923V1132.98H431.715v-80.62h10.391Zm-13.36-213.746c14.844,0,22.266,6.094,22.266,18.75,0,12.187-7.422,18.75-22.266,18.75H431.715v-37.5h35.131Zm389.238-1.406V818.921H626.993V1132.98H856.084v-98.9h-114.3v-15.94H835.8V932.828H741.786v-15h114.3ZM1061.99,1132.98h126.17L1109,818.921H946.209L867.536,1132.98H989.751l5.443-33.75h61.356Zm-51.46-131.25,11.38-73.59h6.93l11.87,73.59h-30.18Zm305.36,30.94V818.921H1201.1V1132.98h219.19V1032.67h-104.4Zm324.29-26.69q0-90.681-98.02-90.684-21.045,0-46.66,5.395-25.635,5.4-40.4,12.452v49.389q36.93-22.615,77.88-22.619,40.74,0,40.73,34.863l-62.21,7.674q-79.005,9.555-79,71.39,0,29.265,19.13,46.8t52.48,17.53q45.21,0,68.26-35.69h0.9v30.5h66.91v-127Zm-79,72.95q-12.54,12.75-32.45,12.76-14.325,0-22.71-7.16a23.046,23.046,0,0,1-8.4-18.37q0-24.69,34.47-28.84l41.62-4.98v14.32Q1573.71,1066.16,1561.18,1078.93ZM1719.2,877.32a30.617,30.617,0,0,0,11.3-24.487,29.815,29.815,0,0,0-11.3-24.073q-11.31-9.338-29.43-9.338-17.91,0-29.32,9.338a29.684,29.684,0,0,0-11.41,24.073q0,14.318,11.41,24.176t29.32,9.857Q1707.9,886.866,1719.2,877.32Zm5.48,43.164h-70.72v212.5h70.72v-212.5Z" transform="translate(-316.938 -818.906)"/>
       </svg>
-      <p>Type in local chat<br>to talk to Claude</p>
+      <p>Type in local chat<br>to start</p>
     </div>
     <div id="thinking">
       <div class="think-dot"></div>
@@ -295,8 +326,10 @@
   </div>
 
   <div id="footer">
-    <span id="footer-hint">via Second Life</span>
-    <button id="clear-btn" onclick="clearChat()">clear</button>
+    <button class="footer-btn" onclick="refreshView()">Refresh</button>
+    <button class="footer-btn" onclick="loadHistory()">Load</button>
+    <button class="footer-btn" onclick="exportChat()">Export</button>
+    <button class="footer-btn highlight" id="pastebin-btn" onclick="openHandoff()">Open in Pastebin</button>
   </div>
 
 </div>
@@ -306,6 +339,7 @@
   let avatarUuid = null;
   let userMessageShown = false;
   let chatWasActive = false;
+  let pendingHandoff = null;
 
   const offScreen  = document.getElementById('off-screen');
   const appEl      = document.getElementById('app');
@@ -313,6 +347,7 @@
   const emptyEl    = document.getElementById('empty');
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
+  const pastebinBtn = document.getElementById('pastebin-btn');
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlUuid = urlParams.get('uuid');
@@ -335,9 +370,16 @@
     hideThinking();
   }
 
-  async function loadHistory(uuid) {
+  function refreshView() {
+    if (!avatarUuid) return;
+    const url = RELAY + '?uuid=' + avatarUuid;
+    window.location.href = url;
+  }
+
+  async function loadHistory() {
+    if (!avatarUuid) return;
     try {
-      const res = await fetch(`${RELAY}/history?uuid=${uuid}`);
+      const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
       if (!res.ok) return;
       const data = await res.json();
 
@@ -348,10 +390,81 @@
       }
 
       if (data.messages && data.messages.length > 0) {
+        clearMessages();
         emptyEl.style.display = 'none';
         data.messages.forEach(msg => {
           addMessage(msg.role === 'user' ? 'user' : 'assistant', msg.text, '', true);
         });
+      }
+    } catch(e) {}
+  }
+
+  async function exportChat() {
+    if (!avatarUuid) return;
+    try {
+      const res = await fetch(`${RELAY}/history?uuid=${avatarUuid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.messages || data.messages.length === 0) return;
+
+      let content = '';
+      data.messages.forEach(msg => {
+        const role = msg.role === 'user' ? 'You' : 'REALai';
+        content += role + ':\n' + msg.text + '\n\n';
+      });
+
+      const pbRes = await fetch(`${RELAY}/pastebin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, title: 'REALai HUD Export' })
+      });
+      const pbData = await pbRes.json();
+      if (pbData.url) {
+        window.open(pbData.url, '_blank');
+      }
+    } catch(e) {}
+  }
+
+  async function openHandoff() {
+    if (!pendingHandoff) return;
+    try {
+      const pbRes = await fetch(`${RELAY}/pastebin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: pendingHandoff, title: 'REALai Handoff' })
+      });
+      const pbData = await pbRes.json();
+      if (pbData.url) {
+        window.open(pbData.url, '_blank');
+        pendingHandoff = null;
+        pastebinBtn.classList.remove('visible');
+      }
+    } catch(e) {}
+  }
+
+  async function checkHandoff() {
+    if (!avatarUuid) return;
+    try {
+      const res = await fetch(`${RELAY}/gethandoff?uuid=${avatarUuid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.content) {
+        pendingHandoff = data.content;
+        pastebinBtn.classList.add('visible');
+      }
+    } catch(e) {}
+  }
+
+  async function initHistory(uuid) {
+    try {
+      const res = await fetch(`${RELAY}/history?uuid=${uuid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.dark) {
+        document.body.classList.add('dark');
+      } else {
+        document.body.classList.remove('dark');
       }
     } catch(e) {}
   }
@@ -363,7 +476,7 @@
       if (data.avatar_uuid) {
         avatarUuid = data.avatar_uuid;
         statusDot.className = 'active';
-        await loadHistory(avatarUuid);
+        await initHistory(avatarUuid);
       }
     } catch(e) {}
   }
@@ -377,7 +490,7 @@
       if (data.avatar_uuid && !avatarUuid) {
         avatarUuid = data.avatar_uuid;
         statusDot.className = 'active';
-        await loadHistory(avatarUuid);
+        await initHistory(avatarUuid);
       }
 
       if (typeof data.dark !== 'undefined') {
@@ -391,7 +504,6 @@
       // Handle chat ON/OFF state
       if (typeof data.chat_active !== 'undefined') {
         if (data.chat_active) {
-          // Just switched ON — clear messages and show fresh chat app
           if (!chatWasActive) {
             clearMessages();
             showChatApp();
@@ -399,7 +511,6 @@
           }
           chatWasActive = true;
         } else {
-          // Chat is OFF — show off screen
           chatWasActive = false;
           showOffScreen();
           return;
@@ -425,6 +536,7 @@
         hideThinking();
         addMessage('assistant', data.reply, slTime);
         statusDot.className = 'active';
+        await checkHandoff();
       }
 
     } catch(e) {}
@@ -439,7 +551,7 @@
 
     const label = document.createElement('div');
     label.className = `msg-label ${role === 'user' ? 'you' : 'claude'}`;
-    label.textContent = (role === 'user' ? 'You' : 'Claude') + (time ? '  ' + time : '');
+    label.textContent = (role === 'user' ? 'You' : 'REALai') + (time ? '  ' + time : '');
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${role === 'user' ? 'user' : 'assistant'}`;
@@ -462,22 +574,11 @@
     thinkingEl.classList.remove('visible');
   }
 
-  async function clearChat() {
-    if (!avatarUuid) return;
-    await fetch(`${RELAY}/clear`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ avatar_uuid: avatarUuid })
-    });
-    clearMessages();
-    statusDot.className = 'active';
-  }
-
   async function init() {
     if (urlUuid) {
       avatarUuid = urlUuid;
       statusDot.className = 'active';
-      await loadHistory(avatarUuid);
+      await initHistory(avatarUuid);
     } else {
       await getLatestUuid();
     }
@@ -485,6 +586,7 @@
   }
 
   setInterval(poll, 1500);
+  setInterval(checkHandoff, 5000);
   setInterval(() => fetch(`${RELAY}/ping`), 600000);
   init();
 </script>
