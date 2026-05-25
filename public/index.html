@@ -449,7 +449,7 @@
       const pbRes = await fetch(`${RELAY}/pastebin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, title: 'REALai HUD Export' })
+        body: JSON.stringify({ avatar_uuid: avatarUuid, content, title: 'REALai HUD Export' })
       });
       const pbData = await pbRes.json();
       if (pbData.url) {
