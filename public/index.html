@@ -431,17 +431,15 @@
   // Export — GET request so SL's media browser can fire it.
   // Opens the gist URL directly in a new tab.
   function exportChat() {
-    if (!avatarUuid) return;
-    window.open(`${RELAY}/gist?uuid=${avatarUuid}&type=export`, '_blank');
-  }
+  if (!avatarUuid) return;
+  window.location.href = `${RELAY}/gist?uuid=${avatarUuid}&type=export`;
+}
 
-  // Save Handoff — GET request so SL's media browser can fire it.
-  // Opens the gist URL directly in a new tab.
-  function saveHandoff() {
-    if (!avatarUuid) return;
-    window.open(`${RELAY}/gist?uuid=${avatarUuid}&type=handoff`, '_blank');
-    handoffBtn.classList.remove('visible');
-  }
+function saveHandoff() {
+  if (!avatarUuid) return;
+  handoffBtn.classList.remove('visible');
+  window.location.href = `${RELAY}/gist?uuid=${avatarUuid}&type=handoff`;
+}
 
   async function initHistory(uuid) {
     try {
