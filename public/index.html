@@ -266,6 +266,76 @@
       max-width: 160px;
     }
 
+    /* ===================== PRIVATE FILE LIST ===================== */
+
+    #file-list-panel {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      animation: fadeUp 0.2s ease forwards;
+    }
+
+    #file-list-panel.visible {
+      display: flex;
+    }
+
+    #file-list-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      opacity: 0.9;
+      padding-bottom: 2px;
+    }
+
+    #file-list-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .file-btn {
+      font-size: 12px;
+      font-weight: 600;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: var(--text-dim);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
+
+    .file-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--bg);
+    }
+
+    .file-btn.loading {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    #file-list-close {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 0;
+      text-align: left;
+      opacity: 0.6;
+    }
+
+    #file-list-close:hover { opacity: 1; }
+
     /* ===================== FOOTER ===================== */
 
     #footer {
@@ -337,6 +407,13 @@
     <div id="status-dot"></div>
   </div>
 
+  <!-- PRIVATE FILE LIST PANEL — shown when #list files is typed -->
+  <div id="file-list-panel">
+    <div id="file-list-label">Private Files</div>
+    <div id="file-list-buttons"></div>
+    <button id="file-list-close" onclick="closeFileList()">close</button>
+  </div>
+
   <div id="messages">
     <div id="empty">
       <svg id="empty-logo" viewBox="0 0 1413.562 319.284" xmlns="http://www.w3.org/2000/svg">
@@ -376,6 +453,8 @@
   const thinkingEl = document.getElementById('thinking');
   const statusDot  = document.getElementById('status-dot');
   const handoffBtn = document.getElementById('handoff-btn');
+  const fileListPanel   = document.getElementById('file-list-panel');
+  const fileListButtons = document.getElementById('file-list-buttons');
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlUuid = urlParams.get('uuid');
@@ -403,6 +482,54 @@
     poll();
   }
 
+  // ===================== PRIVATE FILE LIST =====================
+
+  // Called when poll receives a file_list array from /private-list.
+  // Renders each filename as a clickable button in the panel above the chat.
+  function showFileList(files) {
+    fileListButtons.innerHTML = '';
+    files.forEach(function(filename) {
+      var btn = document.createElement('button');
+      btn.className = 'file-btn';
+      // Show a clean display name — strip the .md extension
+      btn.textContent = filename.replace(/\.md$/i, '');
+      btn.onclick = function() { loadPrivateFile(filename, btn); };
+      fileListButtons.appendChild(btn);
+    });
+    fileListPanel.classList.add('visible');
+  }
+
+  function closeFileList() {
+    fileListPanel.classList.remove('visible');
+    fileListButtons.innerHTML = '';
+  }
+
+  // Called when a file button is clicked.
+  // Sends a GET request to /private-load — relay loads file into Claude context.
+  async function loadPrivateFile(filename, btn) {
+    if (!avatarUuid) return;
+    btn.classList.add('loading');
+    btn.textContent = btn.textContent + '...';
+    try {
+      const res = await fetch(`${RELAY}/private-load?uuid=${avatarUuid}&file=${encodeURIComponent(filename)}`);
+      const data = await res.json();
+      if (data.ok) {
+        closeFileList();
+        // The relay puts a confirmation into pending — poll will pick it up
+        // and show it in the chat naturally.
+        poll();
+      } else {
+        btn.classList.remove('loading');
+        btn.textContent = filename.replace(/\.md$/i, '');
+      }
+    } catch(e) {
+      btn.classList.remove('loading');
+      btn.textContent = filename.replace(/\.md$/i, '');
+    }
+  }
+
+  // ===================== HISTORY =====================
+
   async function loadHistory() {
     if (!avatarUuid) return;
     try {
@@ -428,7 +555,7 @@
     } catch(e) {}
   }
 
-  // Export — two states.
+  // ===================== EXPORT =====================
   // First click: creates the gist, button changes to "Open Export".
   // Second click: navigates HUD screen to the gist URL.
   let exportUrl = null;
@@ -460,7 +587,8 @@
     }
   }
 
-  // Save Handoff — same two-state pattern.
+  // ===================== SAVE HANDOFF =====================
+  // Same two-state pattern as export.
   let handoffUrl = null;
 
   async function saveHandoff() {
@@ -489,6 +617,8 @@
     }
   }
 
+  // ===================== INIT =====================
+
   async function initHistory(uuid) {
     try {
       const res = await fetch(`${RELAY}/history?uuid=${uuid}`);
@@ -515,6 +645,8 @@
     } catch(e) {}
   }
 
+  // ===================== POLL =====================
+
   async function poll() {
     try {
       const res = await fetch(`${RELAY}/poll?uuid=${avatarUuid || ''}`);
@@ -537,6 +669,12 @@
 
       if (data.handoff_ready) {
         handoffBtn.classList.add('visible');
+      }
+
+      // Private file list — received when you type #list files in SL
+      // data.file_list is an array of filenames — show them as buttons
+      if (data.file_list && data.file_list.length > 0) {
+        showFileList(data.file_list);
       }
 
       if (typeof data.chat_active !== 'undefined') {
@@ -580,6 +718,8 @@
 
     } catch(e) {}
   }
+
+  // ===================== MESSAGES =====================
 
   function addMessage(role, text, time = '', silent = false) {
     emptyEl.style.display = 'none';
