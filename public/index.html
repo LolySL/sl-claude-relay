@@ -764,7 +764,7 @@
     poll();
   }
 
-  setInterval(poll, 1500);
+  setInterval(poll, 500);
   setInterval(() => fetch(`${RELAY}/ping`), 600000);
   init();
 </script>

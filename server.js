@@ -937,11 +937,11 @@ app.get("/poll", async (req, res) => {
 
   if (pending[uuid]) {
     const data = pending[uuid];
-    if (data.reply || data.file_list) {
+    if (data.file_list) {
       delete pending[uuid];
     }
     return res.json({ ...data, dark: dark === "1", chat_active: chat === "1", handoff_ready });
-  }
+}
 
   res.json({ dark: dark === "1", chat_active: chat === "1", handoff_ready });
 });
