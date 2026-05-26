@@ -354,7 +354,7 @@
   <div id="footer">
     <button class="footer-btn" onclick="refreshView()">Refresh</button>
     <button class="footer-btn" onclick="loadHistory()">Load</button>
-    <button class="footer-btn" onclick="exportChat()">Export</button>
+    <button class="footer-btn" id="export-btn" onclick="exportChat()">Export</button>
     <button class="footer-btn highlight" id="handoff-btn" onclick="saveHandoff()">Save Handoff</button>
   </div>
 
@@ -428,18 +428,66 @@
     } catch(e) {}
   }
 
-  // Export — GET request so SL's media browser can fire it.
-  // Opens the gist URL directly in a new tab.
-  function exportChat() {
-  if (!avatarUuid) return;
-  window.location.href = `${RELAY}/gist?uuid=${avatarUuid}&type=export`;
-}
+  // Export — two states.
+  // First click: creates the gist, button changes to "Open Export".
+  // Second click: navigates HUD screen to the gist URL.
+  let exportUrl = null;
 
-function saveHandoff() {
-  if (!avatarUuid) return;
-  handoffBtn.classList.remove('visible');
-  window.location.href = `${RELAY}/gist?uuid=${avatarUuid}&type=handoff`;
-}
+  async function exportChat() {
+    const btn = document.getElementById('export-btn');
+    if (exportUrl) {
+      window.location.href = exportUrl;
+      return;
+    }
+    if (!avatarUuid) return;
+    btn.textContent = 'Working...';
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${RELAY}/gist?uuid=${avatarUuid}&type=export`);
+      const data = await res.json();
+      if (data.url) {
+        exportUrl = data.url;
+        btn.textContent = 'Open Export';
+        btn.disabled = false;
+        btn.classList.add('highlight');
+      } else {
+        btn.textContent = 'Export';
+        btn.disabled = false;
+      }
+    } catch(e) {
+      btn.textContent = 'Export';
+      btn.disabled = false;
+    }
+  }
+
+  // Save Handoff — same two-state pattern.
+  let handoffUrl = null;
+
+  async function saveHandoff() {
+    const btn = document.getElementById('handoff-btn');
+    if (handoffUrl) {
+      window.location.href = handoffUrl;
+      return;
+    }
+    if (!avatarUuid) return;
+    btn.textContent = 'Working...';
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${RELAY}/gist?uuid=${avatarUuid}&type=handoff`);
+      const data = await res.json();
+      if (data.url) {
+        handoffUrl = data.url;
+        btn.textContent = 'Open Handoff';
+        btn.disabled = false;
+      } else {
+        btn.textContent = 'Save Handoff';
+        btn.disabled = false;
+      }
+    } catch(e) {
+      btn.textContent = 'Save Handoff';
+      btn.disabled = false;
+    }
+  }
 
   async function initHistory(uuid) {
     try {
