@@ -31,6 +31,10 @@ const KEY_GITHUB      = (uuid) => `github:${uuid}`;
 const KEY_AVATARNAME  = (uuid) => `avatarname:${uuid}`;
 const KEY_LATEST      = "latest_uuid";
 
+// Private owner files — stored permanently (no TTL)
+// Key pattern: private:filename  (e.g. private:REALai_core.md)
+const KEY_PRIVATE     = (filename) => `private:${filename}`;
+
 // TTL: 7 days for session data
 const SESSION_TTL = 60 * 60 * 24 * 7;
 // Display history: last 20 messages stored for webpage reload
@@ -150,6 +154,23 @@ async function createGist(title, content, github_key) {
 }
 
 // ============================================================
+// PRIVATE FILE HELPERS
+// ============================================================
+
+// Extract filename from a [PRIVATE:filename]...[/PRIVATE] block.
+// Returns null if no block found.
+function extractPrivateBlock(text) {
+  const match = text.match(/\[PRIVATE:([^\]]+)\]([\s\S]*?)\[\/PRIVATE\]/);
+  if (!match) return null;
+  return { filename: match[1].trim(), content: match[2].trim() };
+}
+
+// Remove the [PRIVATE:...] block from text before showing to user.
+function stripPrivateBlock(text) {
+  return text.replace(/\[PRIVATE:[^\]]+\][\s\S]*?\[\/PRIVATE\]/g, "").trim();
+}
+
+// ============================================================
 // INIT — HUD Pro session initialisation
 // Called once on HUD startup (attach, rez, reset).
 // Stores github_key, avatar_name, and system_prompt in Redis.
@@ -181,10 +202,117 @@ app.post("/init", async (req, res) => {
 });
 
 // ============================================================
+// PRIVATE FILE SYSTEM — owner only
+// ============================================================
+
+// Upload a file into Redis.
+// Called by upload_private.js on your computer — not from SL.
+// POST /private-upload  { avatar_uuid, filename, content }
+app.post("/private-upload", async (req, res) => {
+  const { avatar_uuid, filename, content } = req.body;
+
+  if (!avatar_uuid || avatar_uuid !== OWNER_UUID) {
+    return res.status(403).json({ error: "Unauthorized." });
+  }
+  if (!filename || !content) {
+    return res.status(400).json({ error: "Missing filename or content." });
+  }
+
+  const safeName = path.basename(filename);
+  if (!safeName.endsWith(".md")) {
+    return res.status(400).json({ error: "Only .md files allowed." });
+  }
+
+  try {
+    // No TTL — private files are permanent until you overwrite or delete them
+    await redis.set(KEY_PRIVATE(safeName), content);
+    console.log(`Private file saved: ${safeName}`);
+    res.json({ ok: true, filename: safeName });
+  } catch (e) {
+    console.error("Private upload error:", e);
+    res.status(500).json({ error: "Failed to save file." });
+  }
+});
+
+// List all private file names.
+// Called by HUD when you type #list files.
+// GET /private-list?uuid=AVATAR_UUID
+// Returns: { files: ["REALai_core.md", "Vision.md", ...] }
+app.get("/private-list", async (req, res) => {
+  const uuid = req.query.uuid;
+
+  if (!uuid || uuid !== OWNER_UUID) {
+    return res.status(403).json({ error: "Unauthorized." });
+  }
+
+  try {
+    // Find all keys matching the private: prefix
+    const keys = await redis.keys("private:*");
+    // Strip the "private:" prefix to get just the filenames
+    const files = keys.map(k => k.replace("private:", "")).sort();
+
+    // Push into pending so the HUD screen receives it via poll
+    pending[uuid] = {
+      avatar_uuid: uuid,
+      file_list: files
+    };
+
+    res.json({ ok: true, count: files.length });
+  } catch (e) {
+    console.error("Private list error:", e);
+    res.status(500).json({ error: "Failed to list files." });
+  }
+});
+
+// Load a private file into the active Claude session.
+// Called by index.html when you click a file button.
+// GET /private-load?uuid=AVATAR_UUID&file=filename.md
+app.get("/private-load", async (req, res) => {
+  const { uuid, file } = req.query;
+
+  if (!uuid || uuid !== OWNER_UUID) {
+    return res.status(403).json({ error: "Unauthorized." });
+  }
+  if (!file) {
+    return res.status(400).json({ error: "Missing file name." });
+  }
+
+  const safeName = path.basename(file);
+
+  try {
+    const content = await redis.get(KEY_PRIVATE(safeName));
+    if (!content) {
+      return res.status(404).json({ error: "File not found: " + safeName });
+    }
+
+    // Inject file content into your Claude session as the system prompt.
+    // This replaces the current system prompt for this session only.
+    await saveSystemPrompt(uuid, content);
+
+    // Clear pending so the screen shows the confirmation cleanly.
+    delete pending[uuid];
+
+    // Put a confirmation into pending so the HUD screen shows it.
+    pending[uuid] = {
+      avatar_uuid: uuid,
+      user_message: "load " + safeName,
+      reply: safeName + " loaded. Claude is ready."
+    };
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Private load error:", e);
+    res.status(500).json({ error: "Failed to load file." });
+  }
+});
+
+// ============================================================
 // STANDARD LINE — Claude /chat
 // HUD Pro only. Stateful. Redis session history.
 // github_key and system_prompt now read from Redis — not expected in body.
 // api_key still travels with each call — never stored.
+// After Claude replies: scans for [PRIVATE:filename]...[/PRIVATE] tags.
+// If found: saves updated file to Redis, strips tags from visible reply.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
@@ -208,7 +336,7 @@ app.post("/chat", async (req, res) => {
 
   await redis.set(KEY_LATEST, avatar_uuid);
 
-  // Read system prompt from Redis (set by /init)
+  // Read system prompt from Redis (set by /init or /private-load)
   const storedPrompt = await getSystemPrompt(avatar_uuid);
   const avatar_name = await redis.get(KEY_AVATARNAME(avatar_uuid)) || "Unknown";
 
@@ -236,12 +364,24 @@ app.post("/chat", async (req, res) => {
 
     let reply = response.data.content[0].text;
 
-    // Check for handoff block
+    // Check for end-user handoff block (existing system)
     const handoffMatch = reply.match(/\[HANDOFF\]([\s\S]*?)\[\/HANDOFF\]/);
     if (handoffMatch) {
       const handoffContent = handoffMatch[1].trim();
       await redis.setEx(KEY_HANDOFF(avatar_uuid), SESSION_TTL, handoffContent);
-      reply = "Handoff ready. Click the button to save to GitHub.";
+      reply = reply.replace(/\[HANDOFF\][\s\S]*?\[\/HANDOFF\]/, "").trim();
+      if (!reply) reply = "Handoff ready. Click the button to save to GitHub.";
+    }
+
+    // Check for private file update block (owner file system)
+    // If Claude wraps content in [PRIVATE:filename]...[/PRIVATE],
+    // save the content to Redis and strip the block from the visible reply.
+    const privateBlock = extractPrivateBlock(reply);
+    if (privateBlock) {
+      await redis.set(KEY_PRIVATE(privateBlock.filename), privateBlock.content);
+      console.log(`Private file updated: ${privateBlock.filename}`);
+      reply = stripPrivateBlock(reply);
+      if (!reply) reply = privateBlock.filename + " saved to your private files.";
     }
 
     messages.push({ role: "assistant", content: reply });
@@ -721,7 +861,7 @@ app.post("/engine-ping", (req, res) => {
 });
 
 // ============================================================
-// HANDOFF — all files served from relay filesystem
+// HANDOFF — end-user system, files served from relay filesystem
 // ============================================================
 
 app.post("/sethandoff", (req, res) => {
@@ -797,7 +937,7 @@ app.get("/poll", async (req, res) => {
 
   if (pending[uuid]) {
     const data = pending[uuid];
-    if (data.reply) {
+    if (data.reply || data.file_list) {
       delete pending[uuid];
     }
     return res.json({ ...data, dark: dark === "1", chat_active: chat === "1", handoff_ready });
@@ -922,6 +1062,8 @@ app.post("/clear", async (req, res) => {
       await redis.del(KEY_HANDOFF(avatar_uuid));
       // Note: we do NOT delete KEY_GITHUB or KEY_AVATARNAME on clear
       // — those are identity settings, not conversation history.
+      // Note: we do NOT delete private files on clear
+      // — those are permanent owner files, not session data.
     } catch (e) {
       console.error("Redis clear error:", e);
     }
@@ -945,7 +1087,7 @@ app.get("/latest", async (req, res) => {
 });
 
 // ============================================================
-// PRIVATE HANDOFF
+// PRIVATE HANDOFF — owner only, reads from filesystem handoffs/
 // ============================================================
 
 app.post("/handoff-private", (req, res) => {
