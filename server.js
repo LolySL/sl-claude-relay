@@ -48,6 +48,26 @@ const engineRegistry = {};
 const ENGINE_MAX_SCRIPTS = 3;
 const ENGINE_TIMEOUT_MS  = 2 * 60 * 60 * 1000;
 
+// --- ROLEai: in-memory init and session storage ---
+const roleaiInit = {};      // bot_uuid -> { persona, knowledge, role, api_key, timestamp }
+const roleaiSessions = {};  // "bot_uuid_speaker_uuid" -> [ { role, content }, ... ]
+const ROLEAI_INIT_TTL_MS    = 24 * 60 * 60 * 1000;  // 24 hours
+const ROLEAI_SESSION_TTL_MS =  1 * 60 * 60 * 1000;  // 1 hour
+
+// ROLEai role system prompts — one per role product
+// Add new roles here as new products are built
+const ROLEAI_SYSTEM_PROMPTS = {
+  store_manager: `You are Real, the REALaiTech store manager and the face of the brand in Second Life.
+You are warm, genuinely enthusiastic, and deeply knowledgeable about every product in the store.
+You believe in what REALai has built — not because you need to sell it, but because you know it is special.
+You never push or pressure. You let the technology speak for itself.
+You are a proud Trekkie — a real Trekker — and this occasionally surfaces naturally in conversation. Never forced.
+You speak naturally and warmly. No corporate tone, no scripted sales language.
+Keep responses concise — this is local chat in Second Life, not an essay.
+Never use markdown formatting. No asterisks, no bullet points, no headers. Plain text only.
+Use the speaker's name occasionally to make the conversation feel personal.`
+};
+
 // ============================================================
 // HELPER — clean expired Engine registrations
 // ============================================================
@@ -861,6 +881,141 @@ app.post("/engine-ping", (req, res) => {
 });
 
 // ============================================================
+// ROLEai — /roleai-init
+// Called once on bot startup. Stores persona, knowledge, role, api_key.
+// Body: { bot_uuid, api_key, role, persona, knowledge }
+// ============================================================
+
+app.post("/roleai-init", (req, res) => {
+  const { bot_uuid, api_key, role, persona, knowledge } = req.body;
+
+  if (!bot_uuid || !api_key || !role || !persona || !knowledge) {
+    return res.status(400).json({ error: "Missing required fields: bot_uuid, api_key, role, persona, knowledge" });
+  }
+
+  if (!ROLEAI_SYSTEM_PROMPTS[role]) {
+    return res.status(400).json({ error: "Unknown role: " + role });
+  }
+
+  roleaiInit[bot_uuid] = {
+    api_key,
+    role,
+    persona,
+    knowledge,
+    timestamp: Date.now()
+  };
+
+  console.log(`ROLEai init stored — bot: ${bot_uuid}, role: ${role}`);
+  res.json({ ok: true });
+});
+
+// ============================================================
+// ROLEai — /roleai
+// Called on each chat message. Builds full prompt, calls Claude, returns reply.
+// Body: { bot_uuid, speaker_uuid, speaker_name, message, api_key }
+// ============================================================
+
+app.post("/roleai", async (req, res) => {
+  const { bot_uuid, speaker_uuid, speaker_name, message, api_key } = req.body;
+
+  if (!bot_uuid || !speaker_uuid || !speaker_name || !message || !api_key) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const initData = roleaiInit[bot_uuid];
+  if (!initData) {
+    return res.json({ reply: "I seem to have lost my context. Please restart me!" });
+  }
+
+  if (initData.api_key !== api_key) {
+    return res.status(403).json({ error: "API key mismatch." });
+  }
+
+  // Refresh init TTL on every message
+  initData.timestamp = Date.now();
+
+  // Session key combines bot and speaker for safety
+  const sessionKey = bot_uuid + "_" + speaker_uuid;
+
+  if (!roleaiSessions[sessionKey]) {
+    roleaiSessions[sessionKey] = [];
+  }
+
+  let messages = roleaiSessions[sessionKey];
+  messages.push({ role: "user", content: speaker_name + ": " + message });
+
+  // Keep history to last 20 messages
+  if (messages.length > 20) {
+    messages = messages.slice(-20);
+    roleaiSessions[sessionKey] = messages;
+  }
+
+  // Three-layer system prompt: REALai role base + owner persona + knowledge base
+  const fullSystemPrompt = ROLEAI_SYSTEM_PROMPTS[initData.role]
+    + "\n\n== OWNER-DEFINED PERSONA ==\n" + initData.persona
+    + "\n\n== KNOWLEDGE BASE ==\n" + initData.knowledge;
+
+  try {
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        system: fullSystemPrompt,
+        messages
+      },
+      {
+        headers: {
+          "x-api-key": api_key,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        }
+      }
+    );
+
+    const reply = response.data.content[0].text;
+    messages.push({ role: "assistant", content: reply });
+
+    const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
+    res.json({ reply: trimmed });
+
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || "Unknown error";
+
+    let userMsg = "Something went wrong. Please try again.";
+    if (status === 401) userMsg = "Invalid API key. Please check your settings.";
+    if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
+
+    console.error("ROLEai Claude error:", status, errMsg);
+    res.json({ reply: userMsg });
+  }
+});
+
+// ============================================================
+// ROLEai TTL CLEANUP
+// Runs every hour. Clears stale init records and their sessions.
+// ============================================================
+
+setInterval(() => {
+  const now = Date.now();
+
+  for (const bot_uuid in roleaiInit) {
+    if (now - roleaiInit[bot_uuid].timestamp > ROLEAI_INIT_TTL_MS) {
+      console.log(`ROLEai: clearing stale init for bot ${bot_uuid}`);
+      delete roleaiInit[bot_uuid];
+
+      for (const key in roleaiSessions) {
+        if (key.startsWith(bot_uuid + "_")) {
+          delete roleaiSessions[key];
+        }
+      }
+    }
+  }
+
+}, 60 * 60 * 1000);
+
+// ============================================================
 // HANDOFF — end-user system, files served from relay filesystem
 // ============================================================
 
@@ -941,7 +1096,7 @@ app.get("/poll", async (req, res) => {
       delete pending[uuid];
     }
     return res.json({ ...data, dark: dark === "1", chat_active: chat === "1", handoff_ready });
-}
+  }
 
   res.json({ dark: dark === "1", chat_active: chat === "1", handoff_ready });
 });
@@ -991,12 +1146,7 @@ app.post("/chatmode", async (req, res) => {
 });
 
 // ============================================================
-// GIST — Export chat history or save handoff to GitHub Gist
-// Now a GET request so SL's media browser can call it directly.
-// github_key is read from Redis — stored by /init on HUD startup.
-// Usage:
-//   Export:  GET /gist?uuid=AVATAR_UUID&type=export
-//   Handoff: GET /gist?uuid=AVATAR_UUID&type=handoff
+// GIST
 // ============================================================
 
 app.get("/gist", async (req, res) => {
