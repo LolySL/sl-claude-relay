@@ -87,6 +87,16 @@ function cleanExpiredEngines(avatar_uuid) {
 }
 
 // ============================================================
+// MEDIA URL HELPER
+// Generates a unique media URL by appending the current timestamp.
+// Each call produces a different URL — forces all viewers to reload.
+// ============================================================
+
+function makeMediaUrl(avatar_uuid) {
+  return "/?uuid=" + avatar_uuid + "&v=" + Date.now();
+}
+
+// ============================================================
 // REDIS SESSION HELPERS
 // ============================================================
 
@@ -316,7 +326,8 @@ app.get("/private-load", async (req, res) => {
     pending[uuid] = {
       avatar_uuid: uuid,
       user_message: "load " + safeName,
-      reply: safeName + " loaded. Claude is ready."
+      reply: safeName + " loaded. Claude is ready.",
+      media_url: makeMediaUrl(uuid)
     };
 
     res.json({ ok: true });
@@ -333,6 +344,8 @@ app.get("/private-load", async (req, res) => {
 // api_key still travels with each call — never stored.
 // After Claude replies: scans for [PRIVATE:filename]...[/PRIVATE] tags.
 // If found: saves updated file to Redis, strips tags from visible reply.
+// media_url: unique URL generated on user message arrival and again on reply.
+// LSL reads media_url from response and calls applyMedia() immediately.
 // ============================================================
 
 app.post("/chat", async (req, res) => {
@@ -342,10 +355,12 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
+  // Generate unique media URL on user message arrival — triggers sync reload for all viewers
   pending[avatar_uuid] = {
     avatar_uuid,
     user_message: message,
-    reply: null
+    reply: null,
+    media_url: makeMediaUrl(avatar_uuid)
   };
 
   const sessionKey = KEY_SESSION(avatar_uuid);
@@ -410,12 +425,16 @@ app.post("/chat", async (req, res) => {
     await appendDisplayHistory(avatar_uuid, "user", message);
     await appendDisplayHistory(avatar_uuid, "assistant", reply);
 
+    // Generate a fresh unique media URL for the reply — triggers sync reload again
+    const replyMediaUrl = makeMediaUrl(avatar_uuid);
+
     if (pending[avatar_uuid]) {
       pending[avatar_uuid].reply = reply;
+      pending[avatar_uuid].media_url = replyMediaUrl;
     }
 
     const trimmed = reply.length > 1800 ? reply.substring(0, 1797) + "..." : reply;
-    res.json({ reply: trimmed });
+    res.json({ reply: trimmed, media_url: replyMediaUrl });
 
   } catch (err) {
     const status = err.response?.status;
@@ -425,12 +444,15 @@ app.post("/chat", async (req, res) => {
     if (status === 401) userMsg = "Invalid API key. Please check your settings.";
     if (status === 429) userMsg = "Rate limit reached. Please wait a moment and try again.";
 
+    const errorMediaUrl = makeMediaUrl(avatar_uuid);
+
     if (pending[avatar_uuid]) {
       pending[avatar_uuid].reply = userMsg;
+      pending[avatar_uuid].media_url = errorMediaUrl;
     }
 
     console.error("API error:", errMsg);
-    res.json({ reply: userMsg });
+    res.json({ reply: userMsg, media_url: errorMediaUrl });
   }
 });
 
