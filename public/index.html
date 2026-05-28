@@ -484,14 +484,11 @@
 
   // ===================== PRIVATE FILE LIST =====================
 
-  // Called when poll receives a file_list array from /private-list.
-  // Renders each filename as a clickable button in the panel above the chat.
   function showFileList(files) {
     fileListButtons.innerHTML = '';
     files.forEach(function(filename) {
       var btn = document.createElement('button');
       btn.className = 'file-btn';
-      // Show a clean display name — strip the .md extension
       btn.textContent = filename.replace(/\.md$/i, '');
       btn.onclick = function() { loadPrivateFile(filename, btn); };
       fileListButtons.appendChild(btn);
@@ -504,8 +501,6 @@
     fileListButtons.innerHTML = '';
   }
 
-  // Called when a file button is clicked.
-  // Sends a GET request to /private-load — relay loads file into Claude context.
   async function loadPrivateFile(filename, btn) {
     if (!avatarUuid) return;
     btn.classList.add('loading');
@@ -515,8 +510,6 @@
       const data = await res.json();
       if (data.ok) {
         closeFileList();
-        // The relay puts a confirmation into pending — poll will pick it up
-        // and show it in the chat naturally.
         poll();
       } else {
         btn.classList.remove('loading');
@@ -556,8 +549,7 @@
   }
 
   // ===================== EXPORT =====================
-  // First click: creates the gist, button changes to "Open Export".
-  // Second click: navigates HUD screen to the gist URL.
+
   let exportUrl = null;
 
   async function exportChat() {
@@ -588,7 +580,7 @@
   }
 
   // ===================== SAVE HANDOFF =====================
-  // Same two-state pattern as export.
+
   let handoffUrl = null;
 
   async function saveHandoff() {
@@ -671,14 +663,15 @@
         handoffBtn.classList.add('visible');
       }
 
-      // Private file list — received when you type #list files in SL
-      // data.file_list is an array of filenames — show them as buttons
       if (data.file_list && data.file_list.length > 0) {
         showFileList(data.file_list);
       }
 
       if (typeof data.chat_active !== 'undefined') {
         if (data.chat_active) {
+          // Chat is on — show the chat screen.
+          // Only clear messages if we are genuinely transitioning from OFF to ON,
+          // not if we just reloaded mid-session (chatWasActive already true on load).
           if (!chatWasActive) {
             clearMessages();
             showChatApp();
@@ -753,11 +746,30 @@
     thinkingEl.classList.remove('visible');
   }
 
+  // ===================== STARTUP =====================
+  // On every fresh page load, immediately check the server for current chat state.
+  // If chat is already active (rezzed HUD mid-session reload), set chatWasActive = true
+  // right away so the poll loop does not treat this as a new OFF -> ON transition
+  // and wipe the screen.
+
   async function init() {
     if (urlUuid) {
       avatarUuid = urlUuid;
       statusDot.className = 'active';
       await initHistory(avatarUuid);
+
+      // Check current chat state before first poll fires
+      try {
+        const res = await fetch(`${RELAY}/poll?uuid=${avatarUuid}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.chat_active) {
+            chatWasActive = true;
+            showChatApp();
+          }
+        }
+      } catch(e) {}
+
     } else {
       await getLatestUuid();
     }
