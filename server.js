@@ -915,9 +915,12 @@ app.post("/roleai", async (req, res) => {
   let messages = roleaiSessions[sessionKey];
   messages.push({ role: "user", content: speaker_name + ": " + message });
 
-  // Keep history to last 20 messages
-  if (messages.length > 20) {
-    messages = messages.slice(-20);
+  // Role-specific history limits
+  // store_manager: 40 messages (20 exchanges)
+  // rp_character: 100 messages (50 exchanges) — deep RP sessions need more context
+  var historyLimit = initData.role === "rp_character" ? 100 : 40;
+  if (messages.length > historyLimit) {
+    messages = messages.slice(-historyLimit);
     roleaiSessions[sessionKey] = messages;
   }
 
